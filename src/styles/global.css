@@ -1,0 +1,222 @@
+:root {
+  color-scheme: dark;
+  /* Neon-on-black. --accent is swapped at runtime by the accent picker. */
+  --bg: #0b0c0f;
+  --panel: #121419;
+  --surface: #1a1d23;
+  --elevated: #252931;
+  --accent: #f5c400;
+  --accent-rgb: 245, 196, 0;
+  --accent-ink: #0b0c0f;
+  --text: #e6e8eb;
+  --muted: #8b9097;
+  --faint: #565b63;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.1);
+  --danger: #ff4d5e;
+  --ok: #3ee08f;
+
+  /* Glowing neon line treatments. */
+  --neon-line: rgba(var(--accent-rgb), 0.55);
+  --neon-soft: rgba(var(--accent-rgb), 0.22);
+  --glow-sm: 0 0 4px rgba(var(--accent-rgb), 0.6), 0 0 12px rgba(var(--accent-rgb), 0.25);
+  --glow-md: 0 0 6px rgba(var(--accent-rgb), 0.55), 0 0 22px rgba(var(--accent-rgb), 0.28), 0 0 48px rgba(var(--accent-rgb), 0.12);
+  --glow-text: 0 0 6px rgba(var(--accent-rgb), 0.75), 0 0 16px rgba(var(--accent-rgb), 0.35);
+
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --gap: 8px;
+
+  --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'Cascadia Mono', 'Cascadia Code', Consolas, ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background:
+    radial-gradient(1200px 500px at 70% -10%, rgba(var(--accent-rgb), 0.07), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(var(--accent-rgb), 0.05), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font: 13px/1.4 var(--font);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+  box-shadow: var(--glow-sm);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A panel framed by a thin glowing neon line. */
+.neon-panel {
+  position: relative;
+  background: linear-gradient(180deg, rgba(var(--accent-rgb), 0.035), transparent 120px), var(--panel);
+  border: 1px solid var(--neon-soft);
+  border-radius: var(--r-lg);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 0 18px rgba(var(--accent-rgb), 0.08),
+    inset 0 1px 0 rgba(var(--accent-rgb), 0.12);
+}
+
+/* Bright neon edge along the top of a panel. */
+.neon-panel::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent) 20%, var(--accent) 80%, transparent);
+  box-shadow: var(--glow-sm);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.hud-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Square icon button used across the chrome. */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  color: var(--muted);
+  border: 1px solid transparent;
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.icon-btn.on {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: var(--neon-line);
+  box-shadow: var(--glow-sm);
+}
+
+.icon-btn.on :global(svg),
+.icon-btn.on svg {
+  filter: drop-shadow(0 0 3px rgba(var(--accent-rgb), 0.8));
+}
+
+.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: var(--r-md);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  box-shadow: var(--glow-md);
+  transition: filter 0.12s, box-shadow 0.12s;
+}
+
+.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.8), 0 0 30px rgba(var(--accent-rgb), 0.4);
+}
+
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  transition: border-color 0.12s, box-shadow 0.12s, color 0.12s;
+}
+
+.ghost:hover:not(:disabled) {
+  border-color: var(--neon-line);
+  box-shadow: var(--glow-sm);
+  color: var(--accent);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--elevated);
+  border-top-color: var(--accent);
+  filter: drop-shadow(0 0 3px rgba(var(--accent-rgb), 0.8));
+  animation: spin 0.8s linear infinite;
+  flex: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--elevated);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neon-line);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
