@@ -29,6 +29,19 @@ The installer is not code-signed yet, so Windows SmartScreen may ask you to conf
 - Save As STL or OBJ (originals are never modified; saved files are read back and verified)
 - **Open in slicer**: auto-detects OrcaSlicer, Bambu Studio, PrusaSlicer and UltiMaker Cura, or you can pick any slicer executable
 
+**Slice and print** (Slice tab in the workspace sidebar)
+- Slices inside Birdy with the OrcaSlicer 2.5.2 engine. Birdy downloads it once on request (about 200 MB,
+  checked against a pinned SHA-256) into its own app-data folder; an installed OrcaSlicer is used if present
+- Printer profiles for 70+ brands (about 1,200 machines) with matching process and filament presets
+- **Import settings** from OrcaSlicer, Bambu Studio, PrusaSlicer or UltiMaker Cura: picks up your printer,
+  your own presets and your current selections
+- Quick adjustments: layer height, infill, walls, supports (normal or tree), brim, nozzle and bed temperature
+- Print time, filament length and weight; the build plate resizes to the chosen printer
+- G-code preview: layer slider, colours by feature, travel moves, model overlay
+- Save the G-code, or **send it to a printer**: OctoPrint, Moonraker / Klipper (Mainsail, Fluidd),
+  PrusaLink, or **USB** (Marlin serial, with line checksums, resend handling, pause and cancel).
+  API keys and passwords are encrypted with Windows' secure storage
+
 **Library**
 - Groups for organising bookmarks and saved models (create, rename, delete)
 - Model cards with thumbnail and print-check badge; open straight into the workspace
@@ -39,7 +52,7 @@ The installer is not code-signed yet, so Windows SmartScreen may ask you to conf
 npm install
 npm run dev        # run with hot reload
 npm run check      # type-check renderer and main process
-npm test           # print-check unit tests
+npm test           # print-check, slicing and USB streaming tests
 npm run dist       # build the Windows installer into release/
 ```
 
@@ -55,10 +68,15 @@ tests/      print-check tests
 Security: websites run in sandboxed views with no Node access and no preload. The app UI talks to the
 main process only through a small, typed, sender-checked IPC surface. Downloaded files are never executed.
 
+## Licence
+
+Birdy is free software under the [GNU Affero General Public License v3.0](LICENSE).
+
 ## Credits
 
-Birdy works alongside these open-source projects. Slicers are separate programs you install;
-Birdy hands them your model file.
+Slicing is powered by the [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer) engine (AGPL-3.0).
+Birdy runs the unmodified OrcaSlicer 2.5.2 release as a separate program and is not affiliated with
+the OrcaSlicer project. Birdy also works alongside these open-source projects:
 
 - [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer) (AGPL-3.0)
 - [PrusaSlicer](https://github.com/prusa3d/PrusaSlicer) (AGPL-3.0)

@@ -2,10 +2,12 @@
   import { onMount } from 'svelte'
   import Icon, { type IconName } from '../../components/Icon.svelte'
   import Sidebar from '../model-editor/Sidebar.svelte'
+  import PreviewControls from '../slicing/PreviewControls.svelte'
+  import { initSlicing } from '../slicing/store.svelte'
   import { Viewer, type Tool, type ViewPreset } from '../../engine/three/viewer'
   import { formatFromName, MODEL_FORMATS } from '../../types/ipc'
   import { fmtInt, fmtNum } from '../../app/format'
-  import { openSample } from '../../app/demo'
+  import { openSample } from '../../app/demo.svelte'
   import { onAccent } from '../../app/theme.svelte'
   import {
     activate,
@@ -62,7 +64,9 @@
     attachViewer(v)
     setThumbnailer(() => v.snapshot())
     const offAccent = onAccent((hex) => v.setAccent(hex))
+    const offSlicing = initSlicing()
     return () => {
+      offSlicing?.()
       offAccent()
       setThumbnailer(null)
       attachViewer(null)
@@ -211,6 +215,8 @@
           <button class="icon-btn" title="Fit to view (F)" aria-label="Fit to view" onclick={fit}><Icon name="fit" /></button>
         </div>
       </div>
+
+      <PreviewControls />
 
       <div class="toolrail" role="toolbar" aria-label="Transform tools">
         {#each tools as t}

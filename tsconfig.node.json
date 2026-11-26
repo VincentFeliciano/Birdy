@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["electron/**/*.ts", "src/types/ipc.ts", "electron.vite.config.ts"]
+  "include": ["electron/**/*.ts", "src/types/ipc.ts", "src/types/slicing.ts", "electron.vite.config.ts"]
 }

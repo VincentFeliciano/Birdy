@@ -4,6 +4,7 @@
   import { library } from '../../stores/library.svelte'
   import type { SlicersState } from '../../types/ipc'
   import NumField from '../../components/NumField.svelte'
+  import SlicePanel from '../slicing/SlicePanel.svelte'
   import { fmtBytes, fmtInt, fmtNum, mmToIn } from '../../app/format'
   import {
     activeModel,
@@ -50,8 +51,12 @@
     <div class="seg" role="tablist">
       <button role="tab" aria-selected={ws.sidebarTab === 'model'} class:on={ws.sidebarTab === 'model'} onclick={() => (ws.sidebarTab = 'model')}>Model</button>
       <button role="tab" aria-selected={ws.sidebarTab === 'transform'} class:on={ws.sidebarTab === 'transform'} onclick={() => (ws.sidebarTab = 'transform')}>Transform</button>
+      <button role="tab" aria-selected={ws.sidebarTab === 'slice'} class:on={ws.sidebarTab === 'slice'} onclick={() => (ws.sidebarTab = 'slice')}>Slice</button>
     </div>
 
+    {#if ws.sidebarTab === 'slice'}
+      <SlicePanel />
+    {:else}
     <div class="scroll">
       {#if ws.sidebarTab === 'model'}
         <section>
@@ -248,12 +253,13 @@
         </button>
       {/if}
     </footer>
+    {/if}
   </aside>
 {/if}
 
 <style>
   .sidebar {
-    width: 272px;
+    width: 288px;
     flex: none;
     display: flex;
     flex-direction: column;

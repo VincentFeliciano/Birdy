@@ -9,7 +9,7 @@
   import { initLibrary } from '../stores/library.svelte'
   import { downloads, focusAddress, initStores } from '../stores/browser.svelte'
   import { openFromDialog, openFromDownload, remember, toggleWorkspace, ws } from '../features/workspace/store.svelte'
-  import { installDemo } from './demo'
+  import { installDemo } from './demo.svelte'
   import { applyAccent, theme } from './theme.svelte'
 
   let dragging = $state(false)

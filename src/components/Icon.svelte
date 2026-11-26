@@ -42,6 +42,14 @@
     folderplus: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/>',
     pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
     workspace: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 9l3.5 2v4L12 17l-3.5-2v-4z"/>',
+    layers: '<path d="M12 4l9 4.5-9 4.5-9-4.5z"/><path d="M3 12.5l9 4.5 9-4.5M3 16.5l9 4.5 9-4.5"/>',
+    printer: '<path d="M4 4h16v16H4z"/><path d="M4 8h16M9 8v3h6V8M10 11l2 2 2-2M7 17h10"/>',
+    send: '<path d="M4 12l16-8-6 16-2.5-6.5z"/><path d="M11.5 13.5L20 4"/>',
+    play: '<path d="M7 5l12 7-12 7z"/>',
+    pause: '<path d="M8 5v14M16 5v14"/>',
+    stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
+    usb: '<path d="M12 3v14M9 6l3-3 3 3M7 10v2l5 3 5-3v-2"/><circle cx="12" cy="19" r="2"/>',
+    import: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 15v4h14v-4"/>',
   } as const
 
   export type IconName = keyof typeof ICONS

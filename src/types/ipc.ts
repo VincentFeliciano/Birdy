@@ -164,6 +164,23 @@ export interface SlicerHandoffResult {
   error?: string
 }
 
+import type {
+  EngineState,
+  ImportCandidate,
+  ImportResult,
+  ImportSource,
+  PresetCatalog,
+  PrinterInfo,
+  PrinterInput,
+  PrinterTestResult,
+  SendRequest,
+  SendResult,
+  SerialPortChoice,
+  SliceRequest,
+  SliceResult,
+  SliceSaveResult,
+} from './slicing'
+
 export type AppShortcut = 'focus-address' | 'toggle-workspace' | 'open-model'
 
 export type Unsubscribe = () => void
@@ -219,6 +236,29 @@ export interface Api {
     choose(): Promise<SlicersState>
     setDefault(id: string): void
     open(req: SlicerHandoff): Promise<SlicerHandoffResult>
+  }
+  engine: {
+    get(): Promise<EngineState>
+    onState(cb: (s: EngineState) => void): Unsubscribe
+    install(): Promise<EngineState>
+    cancelInstall(): void
+    catalog(refresh?: boolean): Promise<PresetCatalog>
+    slice(req: SliceRequest): Promise<SliceResult>
+    cancelSlice(): void
+    readGcode(jobId: string): Promise<Uint8Array>
+    saveGcode(jobId: string): Promise<SliceSaveResult>
+    importCandidates(): Promise<ImportCandidate[]>
+    importSettings(source: ImportSource): Promise<ImportResult>
+  }
+  printers: {
+    list(): Promise<PrinterInfo[]>
+    save(p: PrinterInput): Promise<PrinterInfo[]>
+    remove(id: string): Promise<PrinterInfo[]>
+    test(id: string): Promise<PrinterTestResult>
+    send(req: SendRequest): Promise<SendResult>
+    /** Main asks the UI which serial port to use when the page calls navigator.serial.requestPort(). */
+    onChoosePort(cb: (ports: SerialPortChoice[]) => void): Unsubscribe
+    choosePort(portId: string | null): void
   }
   app: {
     onShortcut(cb: (s: AppShortcut) => void): Unsubscribe

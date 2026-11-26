@@ -8,7 +8,18 @@ import { countMeshes, countTriangles, measure, type ModelStats } from '../../eng
 import { runPrintCheck } from '../../engine/geometry/runPrintCheck'
 import type { BedSize, PrintReport } from '../../engine/geometry/printCheck'
 
-export const BED: BedSize = { x: 256, y: 256, z: 256 }
+function storedBed(): BedSize {
+  try {
+    const b = JSON.parse(localStorage.getItem('birdy.bed') ?? '') as BedSize
+    if ([b.x, b.y, b.z].every((v) => Number.isFinite(v) && v > 10 && v < 2000)) return b
+  } catch {
+    /* default below */
+  }
+  return { x: 256, y: 256, z: 256 }
+}
+
+/** Build volume used by the plate and the print check: the last printer sliced for, else 256 mm. */
+export const BED = $state<BedSize>(storedBed())
 
 export type Layout = 'browse' | 'split' | 'workspace' | 'library'
 
@@ -50,7 +61,7 @@ export const ws = $state({
   grid: true,
   snap: false,
   sidebarOpen: stored('sidebar', '1') === '1',
-  sidebarTab: 'model' as 'model' | 'transform',
+  sidebarTab: 'model' as 'model' | 'transform' | 'slice',
   exportFormat: 'stl' as ExportFormat,
   loading: null as string | null,
   error: null as string | null,
@@ -80,6 +91,26 @@ interface Doc {
 }
 const docs = new Map<string, Doc>()
 let viewer: Viewer | null = null
+export const getViewer = () => viewer
+
+type ModelChange = 'switch' | 'edit'
+let modelListener: ((change: ModelChange) => void) | null = null
+/** Lets the slicing panel drop or mark stale its preview when the model changes. */
+export function onModelChange(fn: ((change: ModelChange) => void) | null) {
+  modelListener = fn
+}
+
+/** Sets the build volume to a printer's (mm) and re-checks the model against it. */
+export function setBed(x: number, y: number, z: number) {
+  if (![x, y, z].every((v) => Number.isFinite(v) && v > 10 && v < 2000)) return
+  if (BED.x === x && BED.y === y && BED.z === z) return
+  BED.x = x
+  BED.y = y
+  BED.z = z
+  localStorage.setItem('birdy.bed', JSON.stringify({ x, y, z }))
+  viewer?.setBedSize(x, y)
+  scheduleCheck(0)
+}
 
 export const activeModel = () => ws.models.find((m) => m.id === ws.activeId) ?? null
 const activeDoc = () => (ws.activeId ? docs.get(ws.activeId) : undefined)
@@ -87,8 +118,10 @@ const activeDoc = () => (ws.activeId ? docs.get(ws.activeId) : undefined)
 export function attachViewer(v: Viewer | null) {
   viewer = v
   if (!v) return
+  v.setBedSize(BED.x, BED.y)
   v.onTransform = (live) => {
     markModified()
+    if (!live) modelListener?.('edit')
     refresh(!live)
     if (!live) scheduleCheck()
   }
@@ -142,7 +175,7 @@ export async function checkNow() {
   const seq = ++checkSeq
   ws.checking = true
   try {
-    const report = await runPrintCheck(doc.wrapper, BED, doc.warnings)
+    const report = await runPrintCheck(doc.wrapper, { x: BED.x, y: BED.y, z: BED.z }, doc.warnings)
     doc.report = report
     if (seq === checkSeq && ws.activeId === id) ws.report = report
   } catch (err) {
@@ -217,6 +250,7 @@ export async function openModelFile(file: ModelFile) {
 export function activate(id: string, frame = false) {
   const doc = docs.get(id)
   if (!doc) return
+  if (ws.activeId !== id) modelListener?.('switch')
   ws.activeId = id
   ws.report = doc.report
   if (!doc.report) scheduleCheck(0)
@@ -231,6 +265,7 @@ export function closeModel(id: string) {
   const doc = docs.get(id)
   if (!doc) return
   const idx = ws.models.findIndex((m) => m.id === id)
+  if (ws.activeId === id) modelListener?.('switch')
   ws.models.splice(idx, 1)
   docs.delete(id)
   doc.wrapper.traverse((o) => {
@@ -303,6 +338,7 @@ function apply(fn: (w: THREE.Group, doc: Doc) => void) {
   fn(doc.wrapper, doc)
   doc.wrapper.updateMatrixWorld(true)
   markModified()
+  modelListener?.('edit')
   viewer?.changed()
   refresh()
   scheduleCheck()

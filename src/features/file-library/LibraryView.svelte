@@ -59,7 +59,7 @@
       name: 'OrcaSlicer',
       license: 'AGPL-3.0',
       url: 'https://github.com/OrcaSlicer/OrcaSlicer',
-      note: 'Open-source slicer. Birdy detects it and hands models to it with one click.',
+      note: 'Its engine (version 2.5.2, unmodified) does the slicing in the Slice tab. Birdy also hands models to an installed OrcaSlicer with one click.',
     },
     {
       name: 'PrusaSlicer',
@@ -202,9 +202,13 @@
       {:else}
         <div class="about">
           <h3>Birdy</h3>
-          <p>A browser that turns into a 3D-printing workspace. Find a model, check it, fix it, save it, and send it to your slicer without switching apps.</p>
+          <p>A browser that turns into a 3D-printing workspace. Find a model, check it, fix it, slice it, and send it to your printer without switching apps.</p>
+          <p class="dim">
+            Free software under the GNU AGPL v3.0.
+            <button class="link" onclick={() => openBookmark('https://github.com/VincentFeliciano/Birdy')}>Source code</button>
+          </p>
           <h3 class="hud-label">Credits</h3>
-          <p class="dim">Birdy works alongside these open-source projects. Slicers run as separate programs you install; Birdy hands them your model file.</p>
+          <p class="dim">Slicing is powered by the OrcaSlicer engine, run as a separate, unmodified program. Birdy is not affiliated with the OrcaSlicer project. It also works alongside these open-source projects.</p>
           <ul>
             {#each credits as c}
               <li>
@@ -556,6 +560,18 @@
   }
   .dim {
     font-size: 12px;
+  }
+  .about .link {
+    padding: 0;
+    margin-left: 4px;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+  }
+  .about .link:hover {
+    text-decoration: underline;
   }
   .about ul {
     list-style: none;

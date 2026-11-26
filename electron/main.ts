@@ -9,6 +9,10 @@ import { chooseSlicer, listSlicers, openInSlicer, setDefaultSlicer } from './sli
 import { DownloadManager } from './download-manager'
 import { openModelDialog, reopenSaved, saveModel, workspaceDirs } from './file-system'
 import { assertTrusted, isId, isRect, isShortString, setTrustedUi } from './security'
+import { SlicingEngine } from './slicing/engine'
+import { importCandidates, importSettings } from './slicing/import'
+import { listPrinters, removePrinter, savePrinter, sendToPrinter, testPrinter } from './printers'
+import type { ImportSource, PrinterInput, SendRequest, SerialPortChoice, SliceRequest } from '../src/types/slicing'
 
 app.setName('Birdy')
 // Screenshot mode must keep painting even when other windows cover this one.
@@ -23,6 +27,8 @@ let win: BrowserWindow | null = null
 let browser: BrowserManager | null = null
 let downloads: DownloadManager | null = null
 let library: Library | null = null
+let engine: SlicingEngine | null = null
+let serialCallback: ((portId: string) => void) | null = null
 
 const startPageUrl = pathToFileURL(join(app.getAppPath(), 'resources', 'start.html')).href
 
@@ -108,6 +114,8 @@ function createWindow() {
   browser = new BrowserManager(win, { session: browserSession, startPageUrl, onShortcut: handleShortcut })
   downloads = new DownloadManager(win, browserSession, dirs.downloads)
   library = new Library(dirs.library, (d) => win?.webContents.send('library:changed', d))
+  engine = new SlicingEngine((st) => win?.webContents.send('engine:state', st))
+  setupSerial(win)
   registerIpc(dirs.exports)
 
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -187,6 +195,63 @@ function registerIpc(exportsDir: string) {
   handle('slicer:choose', async () => (win ? chooseSlicer(win) : listSlicers()))
   on('slicer:set-default', (id) => isShortString(id, 100) && setDefaultSlicer(id))
   handle('slicer:open', async (req) => openInSlicer(req as SlicerHandoff, exportsDir))
+
+  const eng = () => {
+    if (!engine) throw new Error('The slicing engine is unavailable.')
+    return engine
+  }
+  handle('engine:get', async () => eng().locate())
+  handle('engine:install', async () => eng().install())
+  on('engine:cancel-install', () => engine?.cancelInstall())
+  handle('engine:catalog', async (refresh) => eng().getCatalog(refresh === true))
+  handle('engine:slice', async (req) => eng().slice(req as SliceRequest))
+  on('engine:cancel-slice', () => engine?.cancelSlice())
+  handle('engine:read-gcode', async (jobId) => eng().readGcode(String(jobId)))
+  handle('engine:save-gcode', async (jobId) => (win ? eng().saveGcode(win, String(jobId)) : { ok: false }))
+  handle('engine:import-candidates', async () => importCandidates())
+  handle('engine:import', async (source) => {
+    if (!['orca', 'bambu', 'prusa', 'cura'].includes(String(source))) throw new Error('Unknown slicer.')
+    return importSettings(source as ImportSource, await eng().getCatalog())
+  })
+
+  handle('printers:list', async () => listPrinters())
+  handle('printers:save', async (p) => savePrinter(p as PrinterInput))
+  handle('printers:remove', async (id) => removePrinter(String(id)))
+  handle('printers:test', async (id) => testPrinter(String(id)))
+  handle('printers:send', async (req) => {
+    const r = req as SendRequest
+    if (!r || typeof r.printerId !== 'string' || typeof r.jobId !== 'string') throw new Error('Incomplete request.')
+    return sendToPrinter(r.printerId, eng().jobGcode(r.jobId), r.startPrint === true)
+  })
+  on('serial:chosen', (portId) => {
+    serialCallback?.(typeof portId === 'string' ? portId : '')
+    serialCallback = null
+  })
+}
+
+/**
+ * USB printing uses Web Serial in the app window only (websites live in another session and
+ * never get serial access). When the page asks for a port, the app shows its own picker.
+ */
+function setupSerial(w: BrowserWindow) {
+  const ses = w.webContents.session
+  const isApp = (wc: Electron.WebContents | null | undefined) => !!wc && wc.id === w.webContents.id
+  ses.setPermissionCheckHandler((wc, permission) => (permission === 'serial' ? isApp(wc) : true))
+  ses.setDevicePermissionHandler((d) => d.deviceType === 'serial' && isApp(w.webContents))
+  ses.on('select-serial-port', (event, ports, wc, callback) => {
+    event.preventDefault()
+    if (!isApp(wc)) return callback('')
+    serialCallback?.('')
+    serialCallback = callback
+    const list: SerialPortChoice[] = ports.map((p) => ({
+      portId: p.portId,
+      portName: p.portName,
+      displayName: p.displayName,
+      vendorId: p.vendorId,
+      productId: p.productId,
+    }))
+    w.webContents.send('serial:choose', list)
+  })
 }
 
 /** Dev hook: `--screenshot=<file>` captures the window after it settles, then quits. */
@@ -199,6 +264,11 @@ function maybeScreenshot() {
   setTimeout(async () => {
     if (!win) return
     if (demo) {
+      const sliceFor = process.argv.find((a) => a.startsWith('--demo-slice='))?.slice('--demo-slice='.length)
+      if (sliceFor) await win.webContents.executeJavaScript(`window.__demoSlice = ${JSON.stringify(sliceFor)}`)
+      const printersPort = process.argv.find((a) => a.startsWith('--demo-printers='))?.slice('--demo-printers='.length)
+      if (printersPort) await win.webContents.executeJavaScript(`window.__demoPrinters = ${JSON.stringify(printersPort)}`)
+      if (process.argv.includes('--demo-install')) await win.webContents.executeJavaScript('window.__demoInstall = true')
       try {
         await win.webContents.executeJavaScript('window.__demo ? window.__demo().then(() => "demo ok") : "no demo hook"').then((r) => console.log(`[demo] ${r}`))
       } catch (err) {

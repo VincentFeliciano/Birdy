@@ -1,0 +1,257 @@
+// Pure helpers for the OrcaSlicer engine: catalog parsing, preset matching, job presets and
+// G-code summaries. No Electron or file-system imports, so tests can run them directly.
+import type { PresetCatalog, PresetKind, PresetRef, SliceOverrides, SliceSummary } from '../../src/types/slicing'
+
+const KINDS: readonly PresetKind[] = ['machine', 'process', 'filament']
+
+/**
+ * Builds the preset catalog from an OrcaSlicer debug log. With `--debug 5` the engine logs one
+ * line per system preset it loads, e.g.
+ * `commit_vendor_preset, got preset <name>, filament_id <id>, from <datadir>\system/<Vendor>/<kind>/<file>.json`
+ */
+export function parseCatalogLog(log: string): PresetCatalog {
+  const seen = new Set<string>()
+  const lists: Record<PresetKind, PresetRef[]> = { machine: [], process: [], filament: [] }
+  const vendors = new Set<string>()
+  const re = /got preset (.+?), filament_id [^,]*, from (.+)$/gm
+  for (let m = re.exec(log); m; m = re.exec(log)) {
+    const name = m[1]!.trim()
+    const parts = m[2]!.trim().split(/[\\/]/)
+    const sys = parts.lastIndexOf('system')
+    if (sys < 0 || parts.length < sys + 4) continue
+    const vendor = parts[sys + 1]!
+    const kind = parts[sys + 2] as PresetKind
+    if (!KINDS.includes(kind)) continue
+    const key = `${kind}\u0000${name}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    lists[kind].push({ name, vendor, kind })
+    if (kind === 'machine') vendors.add(vendor)
+  }
+  const byName = (a: PresetRef, b: PresetRef) => a.name.localeCompare(b.name, undefined, { numeric: true })
+  return {
+    vendors: [...vendors].sort((a, b) => a.localeCompare(b)),
+    machines: lists.machine.sort(byName),
+    processes: lists.process.sort(byName),
+    filaments: lists.filament.sort(byName),
+  }
+}
+
+const norm = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/bambu\s*lab/g, 'bbl')
+    .replace(/\bcarbon\b/g, 'c')
+    .replace(/[^a-z0-9]/g, '')
+
+const nozzleOf = (s: string) => /(\d+(?:\.\d+)?)\s*nozzle/i.exec(s)?.[1] ?? null
+const withoutNozzle = (s: string) => s.replace(/\s*\d+(?:\.\d+)?\s*nozzle/i, '').trim()
+
+/**
+ * Whether a process or filament preset is meant for a machine. OrcaSlicer names them
+ * `<setting> @<printer>[ <nozzle> nozzle]`; generic filaments end in `@System`.
+ * This is a name heuristic: the UI still lets people pick any preset.
+ */
+export function fitsMachine(preset: PresetRef, machine: PresetRef | undefined): boolean {
+  if (!machine) return true
+  if (machine.user && machine.base) machine = { ...machine, name: machine.base }
+  const at = preset.name.lastIndexOf('@')
+  if (at < 0) return preset.vendor === machine.vendor || preset.vendor === 'OrcaFilamentLibrary'
+  const target = preset.name.slice(at + 1).trim()
+  if (/^system$/i.test(target)) return true
+  if (preset.vendor !== machine.vendor && preset.vendor !== 'OrcaFilamentLibrary') return false
+  const mNozzle = nozzleOf(machine.name) ?? '0.4'
+  const pNozzle = nozzleOf(target) ?? '0.4'
+  if (Number(mNozzle) !== Number(pNozzle)) return false
+  const t = norm(withoutNozzle(target))
+  const mm = norm(withoutNozzle(machine.name))
+  return t.length > 0 && (mm.includes(t) || t.includes(mm))
+}
+
+const pct = (n: number) => `${Math.round(n)}%`
+const num = (n: number) => String(Math.round(n * 1000) / 1000)
+
+/** Orca setting keys for each override, as the string values its preset JSON uses. */
+export function overrideKeys(kind: PresetKind, o: SliceOverrides): Record<string, string | string[]> {
+  const out: Record<string, string | string[]> = {}
+  if (kind === 'process') {
+    if (o.layerHeight !== undefined) out.layer_height = num(o.layerHeight)
+    if (o.infill !== undefined) out.sparse_infill_density = pct(o.infill)
+    if (o.walls !== undefined) out.wall_loops = String(Math.round(o.walls))
+    if (o.supports !== undefined) {
+      out.enable_support = o.supports === 'off' ? '0' : '1'
+      if (o.supports !== 'off') out.support_type = o.supports === 'tree' ? 'tree(auto)' : 'normal(auto)'
+    }
+    if (o.brim !== undefined) {
+      out.brim_type = o.brim ? 'outer_only' : 'no_brim'
+      if (o.brim && o.brimWidth !== undefined) out.brim_width = num(o.brimWidth)
+    }
+  } else if (kind === 'filament') {
+    if (o.nozzleTemp !== undefined) {
+      out.nozzle_temperature = [num(o.nozzleTemp)]
+      out.nozzle_temperature_initial_layer = [num(o.nozzleTemp)]
+    }
+    if (o.bedTemp !== undefined) {
+      const t = [num(o.bedTemp)]
+      for (const plate of ['hot_plate_temp', 'textured_plate_temp', 'cool_plate_temp', 'eng_plate_temp', 'textured_cool_plate_temp', 'supertack_plate_temp']) {
+        out[plate] = t
+        out[`${plate}_initial_layer`] = t
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * The preset file Birdy hands the engine for one slice. It inherits the chosen system preset
+ * (or carries an imported user preset's own settings) and adds the overrides on top.
+ */
+export function buildJobPreset(
+  kind: PresetKind,
+  base: { name: string; userJson?: Record<string, unknown> },
+  overrides: SliceOverrides,
+  engineVersion: string,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = base.userJson ? { ...base.userJson } : { inherits: base.name }
+  for (const k of Object.keys(out)) {
+    if (k.startsWith('birdy_') || ['setting_id', 'base_id', 'user_id', 'updated_time', 'is_custom_defined'].includes(k)) delete out[k]
+  }
+  if (typeof out.inherits !== 'string') out.inherits = ''
+  Object.assign(out, overrideKeys(kind, overrides))
+  out.type = kind
+  out.name = `Birdy job ${kind}`
+  out.from = 'User'
+  out.instantiation = 'true'
+  out.version = engineVersion
+  return out
+}
+
+/** "1d 2h 3m 4s" → seconds. */
+export function parseDuration(s: string): number | null {
+  let total = 0
+  let any = false
+  for (const m of s.matchAll(/(\d+(?:\.\d+)?)\s*([dhms])/g)) {
+    any = true
+    total += Number(m[1]) * { d: 86400, h: 3600, m: 60, s: 1 }[m[2] as 'd' | 'h' | 'm' | 's']
+  }
+  return any ? Math.round(total) : null
+}
+
+/** Reads print time, filament use, layer count and bed shape from G-code comments. */
+export function summarizeGcode(text: string): SliceSummary {
+  const line = (re: RegExp) => re.exec(text)?.[1]?.trim() ?? null
+  const time =
+    line(/^; total estimated time: ([^;\r\n]+)/m) ??
+    line(/^; model printing time: [^;\r\n]*; total estimated time: ([^;\r\n]+)/m) ??
+    line(/^; estimated printing time \(normal mode\) = ([^\r\n]+)/m)
+  const numOrNull = (v: string | null) => (v !== null && Number.isFinite(Number(v)) ? Number(v) : null)
+  const area = line(/^; printable_area = ([^\r\n]+)/m)
+  const bed = area
+    ? area
+        .split(',')
+        .map((p) => p.split('x').map(Number) as [number, number])
+        .filter((p) => p.length === 2 && p.every(Number.isFinite))
+    : null
+  return {
+    printTime: time,
+    printSeconds: time ? parseDuration(time) : null,
+    filamentMm: numOrNull(line(/^; filament used \[mm\] = ([\d.]+)/m)),
+    filamentG: numOrNull(line(/^; (?:total )?filament used \[g\] = ([\d.]+)/m)),
+    layers: numOrNull(line(/^; total layer number: (\d+)/m)),
+    printerModel: line(/^; printer_model = ([^\r\n]+)/m),
+    bed: bed && bed.length >= 3 ? bed : null,
+    bedHeight: numOrNull(line(/^; printable_height = ([\d.]+)/m)),
+    maxZ: numOrNull(line(/^; max_z_height: ([\d.]+)/m)),
+  }
+}
+
+/** OrcaSlicer.conf is JSON followed by an MD5 line over the JSON text. */
+export function withConfChecksum(json: string, md5Hex: (s: string) => string): string {
+  const body = json.replace(/\n+$/, '')
+  return `${body}\n# MD5 checksum ${md5Hex(body).toUpperCase()}\n`
+}
+
+export function stripConfChecksum(text: string): string {
+  const i = text.lastIndexOf('# MD5 checksum')
+  return (i >= 0 ? text.slice(0, i) : text).trim()
+}
+
+// ---- Importing settings from other slicers ---------------------------------
+
+export type IniSections = Record<string, Record<string, string>>
+
+/** Parses INI text. Keys before the first section go under "". */
+export function parseIni(text: string): IniSections {
+  const out: IniSections = { '': {} }
+  let cur = out['']!
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue
+    const sec = /^\[(.+)\]$/.exec(line)
+    if (sec) {
+      cur = out[sec[1]!] ??= {}
+      continue
+    }
+    const eq = line.indexOf('=')
+    if (eq > 0) cur[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
+  }
+  return out
+}
+
+/**
+ * Resolves a PrusaSlicer vendor-bundle section such as `[printer:Original Prusa MK4]` through its
+ * `inherits = *parent*; *other*` chain. Later parents override earlier ones; the section wins last.
+ */
+export function resolveIniPreset(bundle: IniSections, type: string, name: string, depth = 0): Record<string, string> | null {
+  const own = bundle[`${type}:${name}`]
+  if (!own || depth > 12) return null
+  const merged: Record<string, string> = {}
+  for (const parent of (own.inherits ?? '').split(';').map((s) => s.trim()).filter(Boolean)) {
+    Object.assign(merged, resolveIniPreset(bundle, type, parent, depth + 1) ?? {})
+  }
+  Object.assign(merged, own)
+  delete merged.inherits
+  return merged
+}
+
+/** Finds the engine's built-in machine preset for a printer named in another slicer. */
+export function matchMachine(machines: PresetRef[], printerName: string, nozzle = '0.4'): PresetRef | null {
+  const want = norm(withoutNozzle(printerName))
+  if (!want) return null
+  const sameNozzle = machines.filter((m) => !m.user && Number(nozzleOf(m.name) ?? '0.4') === Number(nozzle))
+  return (
+    sameNozzle.find((m) => norm(withoutNozzle(m.name)) === want) ??
+    sameNozzle.find((m) => {
+      const n = norm(withoutNozzle(m.name))
+      return n.length > 4 && (want.includes(n) || n.includes(want))
+    }) ??
+    null
+  )
+}
+
+/** Picks the process preset for a machine whose layer height is closest to the one wanted. */
+export function pickProcess(processes: PresetRef[], machine: PresetRef | undefined, layerHeight?: number): PresetRef | null {
+  const fits = processes.filter((p) => !p.user && fitsMachine(p, machine))
+  if (!fits.length) return null
+  const lh = (p: PresetRef) => Number(/^(\d+(?:\.\d+)?)mm/.exec(p.name)?.[1] ?? NaN)
+  const target = layerHeight ?? 0.2
+  return [...fits].sort((a, b) => {
+    const da = Math.abs((lh(a) || 99) - target)
+    const db = Math.abs((lh(b) || 99) - target)
+    if (da !== db) return da - db
+    return Number(/standard/i.test(b.name)) - Number(/standard/i.test(a.name))
+  })[0]!
+}
+
+/** Generic filament for a material type such as PLA or PETG. */
+export function pickFilament(filaments: PresetRef[], type: string | undefined): PresetRef | null {
+  const t = (type ?? 'PLA').toUpperCase().replace(/[^A-Z+-]/g, '')
+  return filaments.find((f) => f.name === `Generic ${t} @System`) ?? filaments.find((f) => f.name === 'Generic PLA @System') ?? null
+}
+
+/** Reads a number out of a setting such as "15%", "0.2" or "[210]". */
+export function settingNumber(v: string | undefined): number | undefined {
+  if (v === undefined) return undefined
+  const m = /-?\d+(?:\.\d+)?/.exec(v)
+  return m ? Number(m[0]) : undefined
+}

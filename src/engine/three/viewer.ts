@@ -5,6 +5,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+import type { GcodePreview } from '../gcode/parseGcode'
 
 // 3D printing convention: Z is up, the build plate is the XY plane, units are millimetres.
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
@@ -13,7 +14,17 @@ export type Tool = 'select' | 'move' | 'rotate' | 'scale'
 export type ViewPreset = 'iso' | 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom'
 export type Projection = 'perspective' | 'orthographic'
 
-const BED = 256
+/** Straight grid lines over a w x d plate centred on the origin, every `step` mm. */
+function gridLines(w: number, d: number, step: number, z: number): THREE.BufferGeometry {
+  const pts: number[] = []
+  const hw = w / 2
+  const hd = d / 2
+  for (let x = 0; x <= w + 1e-6; x += step) pts.push(x - hw, -hd, z, x - hw, hd, z)
+  for (let y = 0; y <= d + 1e-6; y += step) pts.push(-hw, y - hd, z, hw, y - hd, z)
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+  return g
+}
 
 const VIEW_DIRS: Record<ViewPreset, THREE.Vector3> = {
   iso: new THREE.Vector3(1, -1.25, 0.95),
@@ -48,6 +59,14 @@ export class Viewer {
   private raf = 0
   private ro: ResizeObserver
   private showBBox = true
+  private bedW = 256
+  private bedD = 256
+  private preview: THREE.Group | null = null
+  private pvLayers: THREE.LineSegments | null = null
+  private pvTop: THREE.LineSegments | null = null
+  private pvTravel: THREE.LineSegments | null = null
+  private pvData: GcodePreview | null = null
+  private pvLayer = 0
 
   /** Fired while dragging the gizmo (`live`) and once when a drag ends. */
   onTransform: ((live: boolean) => void) | null = null
@@ -110,22 +129,35 @@ export class Viewer {
   }
 
   private buildBed() {
+    for (const child of [...this.bed.children]) {
+      if (child === this.neon) continue
+      this.bed.remove(child)
+      disposeObject(child)
+    }
     const plate = new THREE.Mesh(
-      new THREE.PlaneGeometry(BED, BED),
+      new THREE.PlaneGeometry(this.bedW, this.bedD),
       new THREE.MeshStandardMaterial({ color: '#14171C', roughness: 0.95, metalness: 0 }),
     )
     plate.position.z = -0.05
-    const minor = new THREE.GridHelper(BED, BED / 10, '#1F232A', '#1F232A')
-    minor.rotation.x = Math.PI / 2
-    minor.position.z = 0.01
+    const minor = new THREE.LineSegments(gridLines(this.bedW, this.bedD, 10, 0.01), new THREE.LineBasicMaterial({ color: '#1F232A' }))
     // Axis lines from the plate's front-left corner: X red, Y green, Z blue.
     const axes = new THREE.AxesHelper(36)
-    axes.position.set(-BED / 2, -BED / 2, 0.02)
+    axes.position.set(-this.bedW / 2, -this.bedD / 2, 0.02)
     const colors = axes.geometry.getAttribute('color') as THREE.BufferAttribute
     const palette = ['#E5484D', '#E5484D', '#46A758', '#46A758', '#3E8EF7', '#3E8EF7'].map((c) => new THREE.Color(c))
     palette.forEach((c, i) => colors.setXYZ(i, c.r, c.g, c.b))
-    this.bed.add(plate, minor, axes, this.neon)
-    this.scene.add(this.bed)
+    this.bed.add(plate, minor, axes)
+    if (!this.neon.parent) this.bed.add(this.neon)
+    if (!this.bed.parent) this.scene.add(this.bed)
+  }
+
+  /** Resizes the build plate to a printer's bed (mm). */
+  setBedSize(w: number, d: number) {
+    if (!(w > 10 && d > 10) || (w === this.bedW && d === this.bedD)) return
+    this.bedW = w
+    this.bedD = d
+    this.buildBed()
+    this.setAccent(`#${this.accent.getHexString()}`)
   }
 
   /** Rebuilds the glowing plate outline and major grid in the current accent colour. */
@@ -137,20 +169,19 @@ export class Viewer {
       line.geometry.dispose()
       ;(line.material as THREE.Material).dispose()
     }
-    const major = new THREE.GridHelper(BED, BED / 50, this.accent, this.accent)
-    major.rotation.x = Math.PI / 2
-    major.position.z = 0.02
-    const majorMat = major.material as THREE.LineBasicMaterial
-    majorMat.transparent = true
-    majorMat.opacity = 0.28
+    const major = new THREE.LineSegments(
+      gridLines(this.bedW, this.bedD, 50, 0.02),
+      new THREE.LineBasicMaterial({ color: this.accent, transparent: true, opacity: 0.28 }),
+    )
     // Plate edge drawn in HDR so the bloom pass makes it glow like a neon tube.
-    const h = BED / 2
+    const hw = this.bedW / 2
+    const hd = this.bedD / 2
     const edge = new THREE.LineLoop(
       new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-h, -h, 0.03),
-        new THREE.Vector3(h, -h, 0.03),
-        new THREE.Vector3(h, h, 0.03),
-        new THREE.Vector3(-h, h, 0.03),
+        new THREE.Vector3(-hw, -hd, 0.03),
+        new THREE.Vector3(hw, -hd, 0.03),
+        new THREE.Vector3(hw, hd, 0.03),
+        new THREE.Vector3(-hw, hd, 0.03),
       ]),
       new THREE.LineBasicMaterial({ color: this.accent.clone().multiplyScalar(3), toneMapped: false }),
     )
@@ -187,7 +218,10 @@ export class Viewer {
   }
 
   setModel(model: THREE.Object3D | null) {
-    if (this.model) this.scene.remove(this.model)
+    if (this.model) {
+      this.scene.remove(this.model)
+      this.model.visible = true
+    }
     this.gizmo.detach()
     this.model = model
     if (model) {
@@ -203,7 +237,7 @@ export class Viewer {
   }
 
   private attachGizmo() {
-    if (!this.model || this.tool === 'select') {
+    if (!this.model || this.tool === 'select' || this.preview?.visible) {
       this.gizmo.detach()
       return
     }
@@ -243,7 +277,7 @@ export class Viewer {
   }
 
   private updateBBox() {
-    if (!this.model || !this.showBBox) {
+    if (!this.model || !this.showBBox || !this.model.visible) {
       this.bboxHelper.visible = false
       return
     }
@@ -273,11 +307,16 @@ export class Viewer {
   /** Bounding sphere of the model, or of the plate when empty. */
   private focusSphere() {
     const sphere = new THREE.Sphere()
-    if (this.model) {
+    if (this.preview?.visible && this.pvData && this.pvData.positions.length) {
+      const o = this.preview.position
+      const box = new THREE.Box3(new THREE.Vector3(...this.pvData.min).add(o), new THREE.Vector3(...this.pvData.max).add(o))
+      return box.getBoundingSphere(sphere)
+    }
+    if (this.model?.visible) {
       const box = new THREE.Box3().setFromObject(this.model)
       if (!box.isEmpty()) return box.getBoundingSphere(sphere)
     }
-    sphere.set(new THREE.Vector3(0, 0, 0), BED * 0.6)
+    sphere.set(new THREE.Vector3(0, 0, 0), Math.max(this.bedW, this.bedD) * 0.6)
     return sphere
   }
 
@@ -312,6 +351,88 @@ export class Viewer {
     this.controls.update()
   }
 
+  // ---- Slice preview ---------------------------------------------------------
+
+  /**
+   * Shows sliced G-code as coloured toolpaths. `center` is the bed centre in G-code
+   * coordinates, so the toolpaths sit on the plate the way the printer will place them.
+   */
+  setPreview(p: GcodePreview | null, colorOf: (feature: string) => string, center: [number, number] = [this.bedW / 2, this.bedD / 2]) {
+    if (this.preview) {
+      this.scene.remove(this.preview)
+      disposeObject(this.preview)
+    }
+    this.preview = null
+    this.pvLayers = this.pvTop = this.pvTravel = null
+    this.pvData = p
+    if (!p) {
+      if (this.model) this.model.visible = true
+      this.attachGizmo()
+      this.updateBBox()
+      return
+    }
+    const count = p.positions.length / 3
+    const colors = new Float32Array(count * 3)
+    const palette = p.features.map((f) => new THREE.Color(colorOf(f)))
+    for (let s = 0; s < p.featureOf.length; s++) {
+      const c = palette[p.featureOf[s]!] ?? palette[0]!
+      for (let k = 0; k < 2; k++) {
+        const o = (s * 2 + k) * 3
+        colors[o] = c.r
+        colors[o + 1] = c.g
+        colors[o + 2] = c.b
+      }
+    }
+    const pos = new THREE.BufferAttribute(p.positions, 3)
+    const col = new THREE.BufferAttribute(colors, 3)
+    const geo = () => {
+      const g = new THREE.BufferGeometry()
+      g.setAttribute('position', pos)
+      g.setAttribute('color', col)
+      return g
+    }
+    this.pvLayers = new THREE.LineSegments(geo(), new THREE.LineBasicMaterial({ vertexColors: true, toneMapped: false }))
+    // The current layer is drawn again in HDR so it glows.
+    this.pvTop = new THREE.LineSegments(geo(), new THREE.LineBasicMaterial({ vertexColors: true, toneMapped: false, color: new THREE.Color(2.4, 2.4, 2.4) }))
+    this.pvTop.renderOrder = 1
+    const tg = new THREE.BufferGeometry()
+    tg.setAttribute('position', new THREE.BufferAttribute(p.travels, 3))
+    this.pvTravel = new THREE.LineSegments(tg, new THREE.LineBasicMaterial({ color: '#3a7bd5', transparent: true, opacity: 0.35 }))
+    this.pvTravel.visible = false
+    for (const l of [this.pvLayers, this.pvTop, this.pvTravel]) l.frustumCulled = false
+    this.preview = new THREE.Group()
+    this.preview.add(this.pvLayers, this.pvTop, this.pvTravel)
+    this.preview.position.set(-center[0], -center[1], 0)
+    this.scene.add(this.preview)
+    this.setPreviewLayer(p.layerEnds.length)
+    this.setPreviewVisible(true)
+  }
+
+  /** Shows layers 1..n (n counts from 1). */
+  setPreviewLayer(n: number) {
+    const p = this.pvData
+    if (!p || !this.pvLayers || !this.pvTop || !this.pvTravel) return
+    const layers = p.layerEnds.length
+    this.pvLayer = Math.max(1, Math.min(layers, Math.round(n)))
+    const end = p.layerEnds[this.pvLayer - 1] ?? 0
+    const start = this.pvLayer > 1 ? p.layerEnds[this.pvLayer - 2]! : 0
+    this.pvLayers.geometry.setDrawRange(0, end * 2)
+    this.pvTop.geometry.setDrawRange(start * 2, (end - start) * 2)
+    this.pvTravel.geometry.setDrawRange(0, (p.travelEnds[this.pvLayer - 1] ?? 0) * 2)
+  }
+
+  setPreviewTravel(on: boolean) {
+    if (this.pvTravel) this.pvTravel.visible = on
+  }
+
+  /** Switches between the toolpaths and the model. */
+  setPreviewVisible(on: boolean) {
+    if (this.preview) this.preview.visible = on
+    if (this.model) this.model.visible = !(on && this.preview)
+    this.attachGizmo()
+    this.updateBBox()
+  }
+
   /** A small thumbnail of the current view (used for library cards). */
   snapshot(max = 360): string | null {
     const src = this.renderer.domElement
@@ -328,6 +449,7 @@ export class Viewer {
   }
 
   dispose() {
+    this.setPreview(null, () => '#fff')
     cancelAnimationFrame(this.raf)
     this.ro.disconnect()
     this.gizmo.dispose()
@@ -336,4 +458,13 @@ export class Viewer {
     this.renderer.dispose()
     this.renderer.domElement.remove()
   }
+}
+
+function disposeObject(root: THREE.Object3D) {
+  root.traverse((o) => {
+    const m = o as THREE.Mesh
+    m.geometry?.dispose()
+    const mat = m.material as THREE.Material | THREE.Material[] | undefined
+    for (const x of Array.isArray(mat) ? mat : mat ? [mat] : []) x.dispose()
+  })
 }
