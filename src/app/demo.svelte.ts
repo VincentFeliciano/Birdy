@@ -250,6 +250,31 @@ export function installDemo() {
       }
       return
     }
+    const healthDemo = (window as unknown as { __demoHealth?: string }).__demoHealth
+    if (healthDemo) {
+      // A block with a 0.5 mm fin (thin wall), and a second block with a corner folded through it.
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(40, 0.5, 20).translate(0, 0, 10))
+      const fold = new THREE.BoxGeometry(20, 20, 20).translate(40, 0, 10).toNonIndexed()
+      const pos = fold.getAttribute('position') as THREE.BufferAttribute
+      for (let i = 0; i < pos.count; i++) if (pos.getX(i) > 49 && pos.getY(i) > 9 && pos.getZ(i) > 19) pos.setZ(i, -6)
+      const group = new THREE.Group()
+      group.add(fin, new THREE.Mesh(new THREE.BoxGeometry(20, 20, 6).translate(0, -10, 3)), new THREE.Mesh(fold))
+      const data = exportModel(group, 'stl')
+      await openModelFile({ name: 'health-test.stl', format: 'stl', size: data.byteLength, data })
+      ws.layout = 'workspace'
+      ws.sidebarTab = 'model'
+      await until(() => !!ws.report && !ws.checking)
+      const st = ws.report!.stats
+      console.log(`health: verdict=${ws.report!.verdict} issues=${ws.report!.issues.map((i) => i.code).join(',')} vertices=${st.vertices} intersecting=${st.intersecting} overlap=${st.overlappingParts} thin=${st.thinPct?.toFixed(1)} thinnest=${st.thinnest}`)
+      if (healthDemo === 'thin' || healthDemo === 'intersect') {
+        const issue = ws.report!.issues.find((i) => i.code === healthDemo)
+        if (issue?.mark) focusMark(issue.mark)
+      }
+      await new Promise((r) => setTimeout(r, 400))
+      const stats = document.querySelector('.checkstats')
+      stats?.scrollIntoView({ block: 'end' })
+      return
+    }
     if ((window as unknown as { __demoFormats?: boolean }).__demoFormats) {
       // 3MF round trip of a two-part plate, then a small VRML file.
       await openSample()

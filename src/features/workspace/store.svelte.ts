@@ -233,7 +233,9 @@ export async function checkNow() {
   try {
     doc.wrapper.updateMatrixWorld(true)
     const at = doc.wrapper.matrixWorld.clone()
-    const { marks, ...report } = await runPrintCheck(doc.wrapper, { x: BED.x, y: BED.y, z: BED.z }, doc.warnings)
+    // Resin prints finer walls than filament.
+    const minWall = localStorage.getItem('birdy.sliceMode') === 'resin' ? 0.4 : 0.8
+    const { marks, ...report } = await runPrintCheck(doc.wrapper, { x: BED.x, y: BED.y, z: BED.z }, doc.warnings, minWall)
     // The highlight buffers stay out of reactive state; Svelte would proxy them.
     doc.report = report
     doc.marks = marks ? { marks, at } : null

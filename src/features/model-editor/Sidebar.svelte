@@ -181,8 +181,16 @@
               <dd class="mono" class:bad={!report.stats.watertight}>{report.stats.watertight ? 'Yes' : 'No'}</dd>
               <dt>Volume</dt>
               <dd class="mono">{report.stats.volumeCm3 !== null ? `${fmtNum(report.stats.volumeCm3)} cm³` : '—'}</dd>
-              <dt>Parts</dt>
+              <dt>Shells</dt>
               <dd class="mono">{report.stats.components}</dd>
+              <dt>Triangles</dt>
+              <dd class="mono">{report.stats.triangles.toLocaleString()}</dd>
+              <dt>Vertices</dt>
+              <dd class="mono">{report.stats.vertices.toLocaleString()}</dd>
+              <dt>Self-intersections</dt>
+              <dd class="mono" class:bad={!!report.stats.intersecting}>{report.stats.intersecting === null ? 'not checked' : report.stats.intersecting ? `${report.stats.intersecting.toLocaleString()} triangles` : 'None'}</dd>
+              <dt>Thinnest wall</dt>
+              <dd class="mono" class:bad={(report.stats.thinPct ?? 0) >= 0.5}>{report.stats.thinPct === null ? '—' : report.stats.thinnest !== null ? `${report.stats.thinnest.toFixed(2)} mm` : 'OK'}</dd>
               <dt>Overhang</dt>
               <dd class="mono">{fmtNum(report.stats.overhangPct, 0)}%</dd>
             </dl>

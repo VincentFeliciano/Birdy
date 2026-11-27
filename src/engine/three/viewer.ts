@@ -48,6 +48,8 @@ export const MARK_STYLE: Record<MarkKey, { color: string; kind: 'edges' | 'faces
   overhangFaces: { color: '#3E8EF7', kind: 'faces' },
   belowFaces: { color: '#FF3344', kind: 'faces' },
   floatingFaces: { color: '#A86BFF', kind: 'faces' },
+  intersectFaces: { color: '#C04DFF', kind: 'faces' },
+  thinFaces: { color: '#FFC21A', kind: 'faces' },
 }
 /** Shown without being asked for: problems with the mesh itself. */
 const DEFAULT_MARKS: MarkKey[] = ['openEdges', 'holeCenters', 'nonManifoldEdges', 'flippedFaces', 'degenerate']

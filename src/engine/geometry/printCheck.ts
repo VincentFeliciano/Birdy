@@ -1,5 +1,8 @@
 // Mesh diagnostics and printability rules. Pure functions so they run in a worker and in tests.
 
+import { TriBVH } from './bvh.ts'
+import { findIntersections, findThinWalls, MAX_INTERSECT_TRIS } from './meshAnalysis.ts'
+
 export type Verdict = 'ready' | 'attention' | 'fail'
 export type IssueLevel = 'error' | 'warn' | 'info'
 
@@ -17,6 +20,8 @@ export interface PrintMarks {
   overhangFaces?: Float32Array
   belowFaces?: Float32Array
   floatingFaces?: Float32Array
+  intersectFaces?: Float32Array
+  thinFaces?: Float32Array
 }
 export type MarkKey = keyof PrintMarks
 
@@ -49,6 +54,14 @@ export interface PrintStats {
   overhangPct: number
   size: BedSize
   minZ: number
+  vertices: number
+  /** Triangles crossing others in the same part; null when the mesh was too big to check. */
+  intersecting: number | null
+  /** Pairs of separate parts that pass into each other. */
+  overlappingParts: number
+  /** Share of the surface thinner than the minimum wall; null when not measured (open mesh). */
+  thinPct: number | null
+  thinnest: number | null
 }
 
 export interface PrintReport {
@@ -98,6 +111,8 @@ export interface CheckInput {
   /** Problems found while parsing the file (e.g. truncated STL). */
   fileWarnings: string[]
   isPointCloud: boolean
+  /** Thinnest wall that prints reliably (mm). */
+  minWall?: number
 }
 
 const OVERHANG_COS = Math.cos((45 * Math.PI) / 180)
@@ -148,6 +163,11 @@ export function checkPrintability(input: CheckInput): PrintReport {
     overhangPct: 0,
     size: { x: 0, y: 0, z: 0 },
     minZ: 0,
+    vertices: 0,
+    intersecting: null,
+    overlappingParts: 0,
+    thinPct: null,
+    thinnest: null,
   }
 
   if (input.isPointCloud) {
@@ -330,6 +350,18 @@ export function checkPrintability(input: CheckInput): PrintReport {
   }
 
   const watertight = open === 0 && nonManifold === 0 && invalid === 0
+
+  // Surfaces passing through each other, and walls too thin to print (both need a BVH).
+  const bvh = triCount <= MAX_INTERSECT_TRIS ? new TriBVH(p) : null
+  let cross: ReturnType<typeof findIntersections> | null = null
+  let thinWalls: ReturnType<typeof findThinWalls> | null = null
+  const minWall = input.minWall ?? 0.8
+  if (bvh) {
+    const comp = new Int32Array(triCount)
+    for (let t = 0; t < triCount; t++) comp[t] = tri[t * 3] >= 0 ? ds.find(tri[t * 3]) : -1
+    cross = findIntersections(p, tri, comp, goodFace, bvh, MAX_MARK_FACES)
+    if (watertight && flipped === 0 && signedVol > 0) thinWalls = findThinWalls(p, goodFace, comp, bvh, minWall, MAX_MARK_FACES)
+  }
   const volumeCm3 = watertight ? Math.abs(signedVol) / 1000 : null
   const overhangPct = totalArea > 0 ? (overhangArea / totalArea) * 100 : 0
 
@@ -417,6 +449,32 @@ export function checkPrintability(input: CheckInput): PrintReport {
       detail: 'The file contains several disconnected bodies. That is fine if they are meant to print together.',
     })
   }
+  if (cross && cross.within > 0) {
+    issues.push({
+      level: 'warn',
+      code: 'intersect',
+      mark: 'intersectFaces',
+      title: 'Surfaces pass through each other',
+      detail: `${cross.within.toLocaleString()} triangles cross other parts of the same surface. Slicers can leave gaps or extra walls there. Repair, or Rebuild as solid, fixes it.`,
+    })
+  }
+  if (cross && cross.overlappingPairs > 0) {
+    issues.push({
+      level: 'info',
+      code: 'overlap',
+      title: `${cross.overlappingPairs} overlapping part${cross.overlappingPairs > 1 ? ' pairs' : ' pair'}`,
+      detail: 'Separate bodies pass into each other. Slicers usually merge them; Merge turns them into one solid.',
+    })
+  }
+  if (thinWalls && thinWalls.pct >= 0.5) {
+    issues.push({
+      level: thinWalls.pct > 5 ? 'warn' : 'info',
+      code: 'thin',
+      mark: 'thinFaces',
+      title: 'Thin walls',
+      detail: `${thinWalls.pct.toFixed(thinWalls.pct < 10 ? 1 : 0)}% of the surface is thinner than ${minWall} mm (thinnest ${thinWalls.thinnest.toFixed(2)} mm). Those walls may print weak, gappy or not at all.`,
+    })
+  }
   if (overhangPct > 10) {
     issues.push({
       level: overhangPct > 25 ? 'warn' : 'info',
@@ -466,6 +524,8 @@ export function checkPrintability(input: CheckInput): PrintReport {
     overhangFaces: overhangPct > 10 ? overhangMarks.done() : undefined,
     belowFaces: minZ < -0.01 ? belowMarks.done() : undefined,
     floatingFaces: floatingMarks.done(),
+    intersectFaces: cross?.faces.length ? cross.faces : undefined,
+    thinFaces: thinWalls?.faces.length && thinWalls.pct >= 0.5 ? thinWalls.faces : undefined,
   }
   // Only point at problems that are reported.
   for (const i of issues) if (i.mark && !marks[i.mark]) delete i.mark
@@ -489,6 +549,11 @@ export function checkPrintability(input: CheckInput): PrintReport {
       overhangPct,
       size,
       minZ: Number.isFinite(minZ) ? minZ : 0,
+      vertices: nVerts,
+      intersecting: cross ? cross.within : null,
+      overlappingParts: cross?.overlappingPairs ?? 0,
+      thinPct: thinWalls ? thinWalls.pct : null,
+      thinnest: thinWalls && thinWalls.pct > 0 ? thinWalls.thinnest : null,
     },
   }
 }

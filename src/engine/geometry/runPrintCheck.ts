@@ -53,11 +53,11 @@ export function worldTriangles(root: THREE.Object3D) {
   return { positions: all, isPointCloud: points && total === 0 }
 }
 
-export function runPrintCheck(root: THREE.Object3D, bed: BedSize, fileWarnings: string[]): Promise<PrintReport> {
+export function runPrintCheck(root: THREE.Object3D, bed: BedSize, fileWarnings: string[], minWall?: number): Promise<PrintReport> {
   const { positions, isPointCloud } = worldTriangles(root)
   const id = ++seq
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject })
-    getWorker().postMessage({ id, input: { positions, bed, fileWarnings, isPointCloud } }, [positions.buffer])
+    getWorker().postMessage({ id, input: { positions, bed, fileWarnings, isPointCloud, minWall } }, [positions.buffer])
   })
 }
