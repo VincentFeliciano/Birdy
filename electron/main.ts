@@ -179,6 +179,7 @@ function registerIpc(exportsDir: string) {
   on('tabs:reload', () => browser?.active?.view.webContents.reload())
   on('tabs:stop', () => browser?.active?.view.webContents.stop())
   on('tabs:home', () => browser?.home())
+  handle('tabs:get-model', async () => browser?.getModel() ?? { ok: false, action: 'none', detail: 'No page is open.' })
   on('layout:bounds', (rect) => isRect(rect) && browser?.setBounds(rect))
   on('layout:visible', (v) => typeof v === 'boolean' && browser?.setVisible(v))
 
@@ -240,6 +241,10 @@ function registerIpc(exportsDir: string) {
     return models.importFolder(downloads.dir)
   })
   on('models:reveal', (rel) => isShortString(rel, 1024) && models?.reveal(rel))
+  handle('models:search', async (q) => (isShortString(q, 200) && models ? models.search(q) : []))
+  handle('models:lookup', async (rels) =>
+    Array.isArray(rels) && models ? models.lookup(rels.filter((r): r is string => isShortString(r, 1024)).slice(0, 500)) : [],
+  )
   handle('update:get', async () => getUpdateState())
   handle('update:check', async () => checkForUpdates())
   handle('update:download', async () => downloadUpdate())
@@ -327,6 +332,8 @@ function maybeScreenshot() {
       if (historyDemo) await win.webContents.executeJavaScript(`window.__demoHistory = ${JSON.stringify(historyDemo)}`)
       const barDemo = process.argv.find((a) => a.startsWith('--demo-bar='))?.slice('--demo-bar='.length)
       if (barDemo) await win.webContents.executeJavaScript(`window.__demoBar = ${JSON.stringify(barDemo)}`)
+      const getDemo = process.argv.find((a) => a.startsWith('--demo-get='))?.slice('--demo-get='.length)
+      if (getDemo) await win.webContents.executeJavaScript(`window.__demoGet = ${JSON.stringify(getDemo)}`)
       const uiDemo = process.argv.find((a) => a.startsWith('--demo-ui='))?.slice('--demo-ui='.length)
       if (uiDemo) await win.webContents.executeJavaScript(`window.__demoUi = ${JSON.stringify(uiDemo)}`)
       if (process.argv.includes('--demo-orient')) await win.webContents.executeJavaScript('window.__demoOrient = true')

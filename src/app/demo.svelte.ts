@@ -4,6 +4,8 @@ import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
 import { printCost } from './costs.svelte'
 import { commands, search, ui } from './commands.svelte'
+import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelte'
+import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
 import { arrangePlate, autoOrient, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, makeExposureTest, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
@@ -64,6 +66,49 @@ const issueList = () => ws.report?.issues.map((i) => i.code).join(',') ?? 'none'
 /** Dev hooks used by the `--demo` screenshot runs. */
 export function installDemo() {
   window.__demo = async () => {
+    const getDemo = (window as unknown as { __demoGet?: string }).__demoGet
+    if (getDemo) {
+      const [what, ...rest] = getDemo.split('|')
+      if (what === 'page') {
+        // "Get in Birdy" on a real model page.
+        const url = rest.join('|')
+        ws.layout = 'browse'
+        window.api.tabs.navigate(url)
+        await until(() => browserState.tabs.some((t) => t.url.startsWith(url) && !t.loading), 30_000)
+        await new Promise((r) => setTimeout(r, 1500))
+        const btn = document.querySelector<HTMLButtonElement>('.get')
+        console.log(`get: button=${!!btn}`)
+        if (!btn) return
+        const before = ws.models.length
+        btn.click()
+        await new Promise((r) => setTimeout(r, 800))
+        console.log(`get: note=${document.querySelector('.getnote span')?.textContent} layout=${ws.layout}`)
+        await new Promise((r) => setTimeout(r, 6000))
+        await new Promise((r) => setTimeout(r, 1500))
+        console.log(`get: models=${ws.models.map((m) => m.name).join(',')} notice=${modelsState.notice} url=${browserState.tabs.find((t) => t.id === browserState.activeId)?.url}`)
+      } else {
+        // Search and favourites in the Models panel.
+        ws.layout = 'split'
+        setModelsOpen(true)
+        await until(() => modelsState.entries.length > 0, 10_000)
+        if (what === 'search') {
+          setQuery(rest[0] ?? '')
+          await new Promise((r) => setTimeout(r, 600))
+          await until(() => !modelsState.loading, 10_000)
+          console.log(`search "${rest[0]}": ${modelsState.results.map((e) => e.rel).join(', ')}`)
+        } else if (what === 'favs') {
+          setQuery('gear')
+          await new Promise((r) => setTimeout(r, 600))
+          for (const e of modelsState.results.slice(0, 2)) toggleFav(e.rel)
+          setQuery('')
+          setFavsOnly(true)
+          await new Promise((r) => setTimeout(r, 600))
+          console.log(`favs: stored=${localStorage.getItem('birdy.modelFavs')} shown=${modelsState.results.map((e) => e.name).join(',')}`)
+        }
+        await until(() => modelsState.results.every((e) => e.kind === 'dir' || !!modelsState.thumbs[e.rel]), 15_000).catch(() => {})
+      }
+      return
+    }
     const uiDemo = (window as unknown as { __demoUi?: string }).__demoUi
     if (uiDemo) {
       // Command palette, shortcuts list and drop-anywhere.

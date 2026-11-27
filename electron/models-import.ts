@@ -199,6 +199,36 @@ export async function listModels(root: string, rel: string): Promise<FolderEntry
   return out.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.kind === 'dir' ? -1 : 1))
 }
 
+/** Names anywhere in the Models tree containing every word of the query; models first, then folders. */
+export async function searchModels(root: string, query: string, limit = 200): Promise<FolderEntry[]> {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!words.length) return []
+  const found: FolderEntry[] = []
+  const walk = async (dir: string, depth: number) => {
+    let items
+    try {
+      items = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const d of items) {
+      if (found.length >= limit) return
+      if (d.name.startsWith('.')) continue
+      const full = join(dir, d.name)
+      const hit = words.every((w) => d.name.toLowerCase().includes(w))
+      if (d.isDirectory()) {
+        if (hit) found.push({ name: d.name, rel: toRel(root, full), kind: 'dir', size: 0, mtime: (await stat(full)).mtimeMs, models: await countModels(full, 4) })
+        if (depth > 0) await walk(full, depth - 1)
+      } else if (hit && d.isFile() && formatFromName(d.name)) {
+        const st = await stat(full)
+        found.push({ name: d.name, rel: toRel(root, full), kind: 'model', size: st.size, mtime: st.mtimeMs })
+      }
+    }
+  }
+  await walk(root, 10)
+  return found.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.kind === 'model' ? -1 : 1))
+}
+
 async function countModels(dir: string, depth: number): Promise<number> {
   let n = 0
   try {

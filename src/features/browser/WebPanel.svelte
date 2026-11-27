@@ -4,6 +4,8 @@
   import { activeTab, browser } from '../../stores/browser.svelte'
   import { isBookmarked, toggleBookmark } from '../../stores/library.svelte'
   import { SEARCH_TYPES, isSearchType, type SearchType } from '../../types/ipc'
+  import { modelPage } from '../../types/modelSites'
+  import { ws } from '../workspace/store.svelte'
 
   let { resizing = false }: { resizing?: boolean } = $props()
 
@@ -19,6 +21,29 @@
   const tab = $derived(activeTab())
   const secure = $derived(tab?.url.startsWith('https://') ?? false)
   const starred = $derived(tab && !tab.isStartPage ? isBookmarked(tab.url) : false)
+  const page = $derived(tab ? modelPage(tab.url) : null)
+  let getNote = $state<{ url: string; text: string } | null>(null)
+  let getting = $state(false)
+
+  async function getModel() {
+    if (!tab) return
+    getting = true
+    try {
+      const r = await api.tabs.getModel()
+      getNote = r.ok ? { url: r.action === 'files' ? '' : tab.url, text: r.detail } : { url: tab.url, text: r.detail }
+      // Bring the workspace into view so the model shows up next to the page.
+      if (r.ok && ws.layout === 'browse') ws.layout = 'split'
+    } finally {
+      getting = false
+    }
+  }
+
+  // The note belongs to the page it was given on (the files tab counts as the same model).
+  $effect(() => {
+    if (getNote && tab && getNote.url && getNote.url !== tab.url && modelPage(tab.url)?.id !== modelPage(getNote.url)?.id) getNote = null
+    if (getNote && !getNote.url && tab) getNote = { url: tab.url, text: getNote.text }
+    if (!page) getNote = null
+  })
 
   // Follow the active page's URL unless the user is typing.
   $effect(() => {
@@ -102,6 +127,11 @@
         }} />
       {#if tab?.loading}<span class="loadbar"></span>{/if}
     </form>
+    {#if page}
+      <button class="get" disabled={getting} title="Get this {page.siteName} model into Birdy" onclick={getModel}>
+        <Icon name="download" size={13} />Get in Birdy
+      </button>
+    {/if}
     <button
       class="icon-btn"
       class:on={starred}
@@ -110,6 +140,13 @@
       aria-label={starred ? 'Remove bookmark' : 'Bookmark this page'}
       onclick={() => tab && toggleBookmark(tab)}><Icon name="star" /></button>
   </div>
+  {#if getNote}
+    <div class="getnote" role="status">
+      <Icon name="download" size={13} />
+      <span>{getNote.text}</span>
+      <button class="icon-btn" aria-label="Dismiss" onclick={() => (getNote = null)}><Icon name="close" size={12} /></button>
+    </div>
+  {/if}
   <div class="web" bind:this={host}>
     {#if resizing}
       <div class="placeholder mono">RESIZING</div>
@@ -118,6 +155,46 @@
 </div>
 
 <style>
+  .get {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 14px;
+    border: 1px solid var(--neon-line);
+    background: rgba(var(--accent-rgb), 0.12);
+    color: var(--accent);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: var(--glow-sm);
+  }
+  .get:hover {
+    background: rgba(var(--accent-rgb), 0.22);
+  }
+  .get:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .getnote {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px 6px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--accent);
+  }
+  .getnote span {
+    flex: 1;
+    min-width: 0;
+    color: var(--text);
+  }
   .panel {
     flex: 1;
     min-width: 0;

@@ -251,6 +251,13 @@ export interface UpdateState {
   error?: string
 }
 
+export interface GetModelResult {
+  ok: boolean
+  /** files: went to the model's files list; hint: already there, the user presses the site's button. */
+  action: 'files' | 'hint' | 'none'
+  detail: string
+}
+
 export interface Api {
   tabs: {
     create(url?: string): void
@@ -263,6 +270,8 @@ export interface Api {
     stop(): void
     home(): void
     onState(cb: (state: TabsState) => void): Unsubscribe
+    /** On a model page (Thingiverse, Printables, MakerWorld): start getting its files. */
+    getModel(): Promise<GetModelResult>
   }
   layout: {
     setWebBounds(rect: Rect): void
@@ -282,6 +291,10 @@ export interface Api {
   }
   models: {
     list(rel: string): Promise<ModelsEntry[]>
+    /** Models and folders anywhere in the Models folder whose name has every word of the query. */
+    search(query: string): Promise<ModelsEntry[]>
+    /** The entries that still exist, for saved favourites. */
+    lookup(rels: string[]): Promise<ModelsEntry[]>
     read(rel: string): Promise<ModelFile>
     /** Shows a file in Explorer, or opens the folder ('' = the Models folder). */
     reveal(rel: string): void

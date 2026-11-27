@@ -21,6 +21,7 @@ const api: Api = {
     reload: () => ipcRenderer.send('tabs:reload'),
     stop: () => ipcRenderer.send('tabs:stop'),
     home: () => ipcRenderer.send('tabs:home'),
+    getModel: () => ipcRenderer.invoke('tabs:get-model'),
     onState: (cb) => on('tabs:state', cb),
   },
   layout: {
@@ -42,6 +43,8 @@ const api: Api = {
     list: (rel) => ipcRenderer.invoke('models:list', rel),
     read: (rel) => ipcRenderer.invoke('models:read', rel),
     reveal: (rel) => ipcRenderer.send('models:reveal', rel),
+    search: (query) => ipcRenderer.invoke('models:search', query),
+    lookup: (rels) => ipcRenderer.invoke('models:lookup', rels),
     getThumb: (rel) => ipcRenderer.invoke('models:get-thumb', rel),
     importDownloads: () => ipcRenderer.invoke('models:import-downloads'),
     saveThumb: (rel, dataUrl) => ipcRenderer.send('models:save-thumb', rel, dataUrl),

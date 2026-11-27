@@ -5,7 +5,7 @@ import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join, relative } from 'node:path'
 import { formatFromName, type ModelFile } from '../src/types/ipc'
 import { MAX_MODEL_BYTES } from './file-system'
-import { importIntoModels, isArchiveName, listModels, type FolderEntry, type ImportResult } from './models-import'
+import { importIntoModels, isArchiveName, listModels, searchModels, type FolderEntry, type ImportResult } from './models-import'
 
 const MAX_THUMB_BYTES = 400 * 1024
 
@@ -53,6 +53,25 @@ export class ModelsManager {
 
   list(rel: string): Promise<FolderEntry[]> {
     return listModels(this.root, rel)
+  }
+
+  search(query: string): Promise<FolderEntry[]> {
+    return searchModels(this.root, query)
+  }
+
+  async lookup(rels: string[]): Promise<FolderEntry[]> {
+    const out: FolderEntry[] = []
+    for (const rel of rels) {
+      try {
+        const full = this.resolve(rel)
+        const st = await stat(full)
+        if (st.isDirectory()) out.push({ name: basename(full), rel, kind: 'dir', size: 0, mtime: st.mtimeMs })
+        else if (st.isFile() && formatFromName(full)) out.push({ name: basename(full), rel, kind: 'model', size: st.size, mtime: st.mtimeMs })
+      } catch {
+        // Moved or deleted: leave it out.
+      }
+    }
+    return out
   }
 
   async read(rel: string): Promise<ModelFile> {

@@ -2,7 +2,8 @@ import { app, WebContentsView, type BrowserWindow, type Input, type Session, typ
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildSearchUrl, formatFromName, isSearchType, type Rect, type SearchType, type TabInfo, type TabsState } from '../src/types/ipc'
+import { modelPage } from '../src/types/modelSites'
+import { buildSearchUrl, formatFromName, isSearchType, type GetModelResult, type Rect, type SearchType, type TabInfo, type TabsState } from '../src/types/ipc'
 import { isWebUrl } from './security'
 import { followSignInUserAgent } from './user-agent'
 
@@ -46,6 +47,18 @@ export class BrowserManager {
     private win: BrowserWindow,
     private opts: Options,
   ) {}
+
+  /** "Get in Birdy" on a model page: the URL comes from the tab itself, never from the UI. */
+  getModel(): GetModelResult {
+    const wc = this.active?.view.webContents
+    const page = wc ? modelPage(wc.getURL()) : null
+    if (!wc || !page) return { ok: false, action: 'none', detail: 'This is not a model page Birdy knows.' }
+    if (page.files) {
+      void wc.loadURL(page.files)
+      return { ok: true, action: 'files', detail: page.hint }
+    }
+    return { ok: true, action: 'hint', detail: page.hint }
+  }
 
   get active() {
     return this.activeId ? this.tabs.get(this.activeId) : undefined

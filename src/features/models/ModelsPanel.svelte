@@ -1,10 +1,13 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte'
   import { fmtBytes } from '../../app/format'
-  import { crumbs, importDownloads, models, openFolder, openModel, refresh, setModelsOpen, up } from './store.svelte'
+  import { crumbs, importDownloads, isFav, models, openFolder, openModel, refresh, setFavsOnly, setModelsOpen, setQuery, showInFolder, shown, toggleFav, up } from './store.svelte'
 
   const api = window.api
   const path = $derived(crumbs())
+  const list = $derived(shown())
+  const filtering = $derived(!!models.query.trim() || models.favsOnly)
+  const folderOf = (rel: string) => rel.split('/').slice(0, -1).join('/') || 'Models'
 </script>
 
 <div class="mp neon-panel" role="region" aria-label="Models folder">
@@ -17,11 +20,28 @@
         <button class="crumb" class:here={c.rel === models.cwd} onclick={() => openFolder(c.rel)}>{c.name}</button>
       {/each}
     </nav>
-    {#if models.notice}
+    {#if models.notice && !filtering}
       <span class="notice" title={models.notice}>{models.notice}</span>
     {/if}
     <div class="spacer"></div>
-    {#if models.cwd}
+    <label class="search" class:on={!!models.query}>
+      <Icon name="target" size={12} />
+      <input
+        type="search"
+        placeholder="Search all models"
+        aria-label="Search all models"
+        value={models.query}
+        oninput={(e) => setQuery(e.currentTarget.value)}
+        onkeydown={(e) => e.key === 'Escape' && setQuery('')} />
+    </label>
+    <button
+      class="icon-btn fav-filter"
+      class:on={models.favsOnly}
+      title={models.favsOnly ? 'Show all models' : `Show favourites (${models.favs.length})`}
+      aria-label="Show favourites"
+      aria-pressed={models.favsOnly}
+      onclick={() => setFavsOnly(!models.favsOnly)}><Icon name="star" size={15} /></button>
+    {#if models.cwd && !filtering}
       <button class="icon-btn" title="Up one folder" aria-label="Up one folder" onclick={up}><Icon name="back" size={15} /></button>
     {/if}
     <button class="ghost sm" title="Copy models and unpack ZIPs that are already in your Downloads folder" onclick={importDownloads}><Icon name="import" size={13} />Add from Downloads</button>
@@ -33,7 +53,13 @@
   <div class="grid">
     {#if models.error}
       <p class="empty">{models.error}</p>
-    {:else if !models.entries.length && !models.loading}
+    {:else if filtering && !list.length && !models.loading}
+      <p class="empty">
+        {models.query.trim()
+          ? `No model or folder named like “${models.query.trim()}”${models.favsOnly ? ' among your favourites' : ''}.`
+          : 'No favourites yet. Hover a model or folder and press its star to keep it here.'}
+      </p>
+    {:else if !filtering && !models.entries.length && !models.loading}
       <div class="empty">
         <p>
           {models.cwd ? 'No models in this folder.' : 'No models yet. STL, 3MF, OBJ, GLB and PLY files you download land here, and ZIP downloads are unpacked into folders of their own. You can also put your own files in this folder.'}
@@ -41,7 +67,7 @@
         <button class="ghost" onclick={() => api.models.reveal(models.cwd)}><Icon name="folder" size={14} />Open in File Explorer</button>
       </div>
     {/if}
-    {#each models.entries as e (e.rel)}
+    {#each list as e (e.rel)}
       <div class="tile" class:hl={models.highlight === e.rel} class:busy={models.opening === e.rel}>
         <button
           class="main"
@@ -59,8 +85,20 @@
             {#if models.opening === e.rel}<span class="spin"><span class="spinner"></span></span>{/if}
           </span>
           <span class="name">{e.name}</span>
-          <span class="meta mono">{e.kind === 'dir' ? `${e.models ?? 0} model${e.models === 1 ? '' : 's'}` : fmtBytes(e.size)}</span>
+          <span class="meta mono">{filtering ? folderOf(e.rel) : e.kind === 'dir' ? `${e.models ?? 0} model${e.models === 1 ? '' : 's'}` : fmtBytes(e.size)}</span>
         </button>
+        <button
+          class="fav icon-btn"
+          class:on={isFav(e.rel)}
+          title={isFav(e.rel) ? 'Remove from favourites' : 'Add to favourites'}
+          aria-label={isFav(e.rel) ? `Remove ${e.name} from favourites` : `Add ${e.name} to favourites`}
+          aria-pressed={isFav(e.rel)}
+          onclick={() => toggleFav(e.rel)}><Icon name="star" size={12} /></button>
+        {#if filtering}
+          <button class="where icon-btn" title="Show in its folder" aria-label="Show {e.name} in its folder" onclick={() => showInFolder(e.rel)}>
+            <Icon name="folder" size={12} />
+          </button>
+        {/if}
         <button class="reveal icon-btn" title="Show in File Explorer" aria-label="Show {e.name} in File Explorer" onclick={() => api.models.reveal(e.rel)}>
           <Icon name="external" size={12} />
         </button>
@@ -122,6 +160,61 @@
   }
   .spacer {
     flex: 1;
+  }
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--faint);
+  }
+  .search.on,
+  .search:focus-within {
+    border-color: var(--neon-line);
+    color: var(--accent);
+  }
+  .search input {
+    width: 150px;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    outline: none;
+  }
+  .fav-filter.on {
+    color: var(--accent);
+    box-shadow: var(--glow-sm);
+  }
+  .fav,
+  .where {
+    position: absolute;
+    top: 4px;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .fav {
+    left: 4px;
+  }
+  .where {
+    left: 30px;
+  }
+  .tile:hover .fav,
+  .tile:hover .where,
+  .fav.on,
+  .fav:focus-visible,
+  .where:focus-visible {
+    opacity: 1;
+  }
+  .fav.on {
+    color: var(--accent);
+  }
+  .fav.on :global(svg) {
+    fill: currentColor;
   }
   .ghost.sm {
     height: 26px;

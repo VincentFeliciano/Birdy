@@ -17,7 +17,76 @@ export const models = $state({
   /** Model being opened. */
   opening: null as string | null,
   notice: null as string | null,
+  /** Search across the whole Models folder. */
+  query: '',
+  /** Show favourites instead of the current folder. */
+  favsOnly: false,
+  /** Search results or favourites, when either is on. */
+  results: [] as ModelsEntry[],
+  favs: loadFavs(),
 })
+
+function loadFavs(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem('birdy.modelFavs') ?? '[]')
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, 500) : []
+  } catch {
+    return []
+  }
+}
+
+export const isFav = (rel: string) => models.favs.includes(rel)
+
+export function toggleFav(rel: string) {
+  models.favs = isFav(rel) ? models.favs.filter((r) => r !== rel) : [...models.favs, rel]
+  localStorage.setItem('birdy.modelFavs', JSON.stringify(models.favs))
+  if (models.favsOnly) void refreshResults()
+}
+
+/** What the grid shows: search hits, favourites, or the current folder. */
+export const shown = () => (models.query.trim() || models.favsOnly ? models.results : models.entries)
+
+let rseq = 0
+async function refreshResults() {
+  const id = ++rseq
+  const q = models.query.trim()
+  if (!q && !models.favsOnly) return
+  models.loading = true
+  try {
+    let list = q ? await window.api.models.search(q) : await window.api.models.lookup([...models.favs])
+    if (q && models.favsOnly) list = list.filter((e) => isFav(e.rel))
+    if (id !== rseq) return
+    models.results = list
+    queueThumbs(list.filter((e) => e.kind === 'model'))
+  } catch (err) {
+    if (id === rseq) {
+      models.results = []
+      models.notice = `Couldn't search: ${(err as Error).message}`
+    }
+  } finally {
+    if (id === rseq) models.loading = false
+  }
+}
+
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+export function setQuery(q: string) {
+  models.query = q
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => void refreshResults(), 180)
+}
+
+export function setFavsOnly(on: boolean) {
+  models.favsOnly = on
+  void refreshResults()
+}
+
+/** Folder of a search hit or favourite, for "show in folder". */
+export function showInFolder(rel: string) {
+  models.query = ''
+  models.favsOnly = false
+  openFolder(rel.split('/').slice(0, -1).join('/'))
+  models.highlight = rel
+}
 
 let seq = 0
 
@@ -50,6 +119,8 @@ export async function refresh() {
 }
 
 export function openFolder(rel: string) {
+  models.query = ''
+  models.favsOnly = false
   models.cwd = rel
   models.highlight = null
   void refresh()
@@ -109,7 +180,11 @@ export async function importDownloads() {
 }
 
 export function initModels() {
-  const offChanged = window.api.models.onChanged(() => models.open && void refresh())
+  const offChanged = window.api.models.onChanged(() => {
+    if (!models.open) return
+    void refresh()
+    void refreshResults()
+  })
   const offImported = window.api.models.onImported(onImported)
   if (models.open) void refresh()
   return () => {
