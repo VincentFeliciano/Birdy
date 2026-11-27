@@ -7,6 +7,7 @@
     cancelResinSlice,
     choosePrinter,
     clearResult,
+    makeExposureTest,
     pickIsland,
     resetSettings,
     resin,
@@ -99,16 +100,33 @@
     <p class="hint small">Birdy slices the model as it is and doesn’t add supports yet, so use pre-supported models or ones that sit flat on the plate.</p>
   </section>
 
+  <section>
+    <h3 class="hud-label">New resin?</h3>
+    <p class="hint">
+      Print the exposure test: five small pieces side by side, from 60% to 140% of the exposure above. Pick the one with crisp pins and open holes,
+      then use its time.
+    </p>
+    <button class="ghost wide test-btn" disabled={resin.slicing} onclick={makeExposureTest}><Icon name="target" size={14} />Make exposure test print</button>
+  </section>
+
   {#if r}
     <section>
-      <h3 class="hud-label row-head">Sliced <span class="dim">{r.printer.name}</span></h3>
+      <h3 class="hud-label row-head">{r.test ? 'Exposure test' : 'Sliced'} <span class="dim">{r.printer.name}</span></h3>
+      {#if r.test}
+        <ol class="levels">
+          {#each r.test as t, i}<li><span class="mono">{'•'.repeat(i + 1)}</span><b class="mono">{t} s</b></li>{/each}
+        </ol>
+        <p class="hint small">Count the dots on each piece to find its time. Too short: thin pins are missing. Too long: small holes close up.</p>
+      {/if}
       <div class="stats">
         <div><span class="k">Time</span><span class="v mono">{fmtDur(r.printSeconds)}</span></div>
         <div><span class="k">Resin</span><span class="v mono">{(r.volumeMm3 / 1000).toFixed(1)} ml</span></div>
         <div><span class="k">Weight</span><span class="v mono">{r.weightG.toFixed(1)} g</span></div>
         <div><span class="k">Layers</span><span class="v mono">{r.layers}</span></div>
       </div>
-      {#if r.islandCount}
+      {#if r.test}
+        <!-- The test print has no islands to check. -->
+      {:else if r.islandCount}
         <div class="islands">
           <p class="warn-line">
             <Icon name="alert" size={14} />
@@ -343,6 +361,33 @@
   .stats .v {
     font-size: 14px;
     color: var(--text);
+  }
+  .test-btn {
+    margin-top: 8px;
+    height: 30px;
+    font-size: 12px;
+  }
+  .levels {
+    list-style: none;
+    margin: 0 0 6px;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+  }
+  .levels li {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 5px 2px;
+    border-radius: 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    font-size: 11px;
+  }
+  .levels li span {
+    color: var(--accent);
+    letter-spacing: -1px;
   }
   .islands {
     margin-top: 10px;

@@ -3,7 +3,7 @@ import { importDownloads as importModelsFromDownloads, models as modelsState, op
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
 import { checkNow, focusMark, openModelFile, repairActive, setXForm, ws } from '../features/workspace/store.svelte'
-import { choosePrinter as chooseResinPrinter, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
+import { choosePrinter as chooseResinPrinter, makeExposureTest, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
 /** Builds a small printable sample (a torus knot, ~70 mm) as a real binary STL and opens it. */
@@ -104,7 +104,8 @@ export function installDemo() {
       setSliceMode('resin')
       chooseResinPrinter(resinDemo.split(':')[0]!)
       const t0 = performance.now()
-      await sliceResinModel()
+      if (resinDemo.endsWith(':test')) await makeExposureTest()
+      else await sliceResinModel()
       const r = resin.result
       await new Promise((r) => setTimeout(r, 300))
       const sc = document.querySelector('.sidebar .scroll')

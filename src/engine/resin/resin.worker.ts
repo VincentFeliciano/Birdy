@@ -1,8 +1,11 @@
+import { exposureTest } from './exposureTest'
 import type { ResinPrinter, ResinSettings } from './printers'
 import { sliceResin } from './slice'
 
 export interface ResinWorkerJob {
-  /** Binary STL of the model as placed in the workspace. */
+  /** 'test' builds the exposure test print instead of slicing a model. */
+  kind?: 'slice' | 'test'
+  /** Binary STL of the model as placed in the workspace (not used for the test print). */
   stl: Uint8Array
   printer: ResinPrinter
   settings: ResinSettings
@@ -27,6 +30,11 @@ function stlTriangles(stl: Uint8Array) {
 self.onmessage = (e: MessageEvent<ResinWorkerJob>) => {
   try {
     const job = e.data
+    if (job.kind === 'test') {
+      const result = exposureTest(job.printer, job.settings, job.softwareVersion)
+      self.postMessage({ result }, { transfer: result.parts.map((p) => p.buffer as ArrayBuffer) })
+      return
+    }
     let last = 0
     const result = sliceResin({ ...job, positions: stlTriangles(job.stl) }, (done) => {
       if (done - last >= 0.01 || done === 1) {

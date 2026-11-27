@@ -4,6 +4,7 @@ import { BoxGeometry, CylinderGeometry, TorusGeometry, TorusKnotGeometry } from 
 import { checksum, decodeLayer, GOO_HEADER_SIZE, LayerEncoder, readLayers } from '../src/engine/resin/goo.ts'
 import { DEFAULT_RESIN, RESIN_PRINTERS, type ResinPrinter } from '../src/engine/resin/printers.ts'
 import { ResinFitError, sliceResin } from '../src/engine/resin/slice.ts'
+import { exposureTest, TEST_LEVELS } from '../src/engine/resin/exposureTest.ts'
 
 let passed = 0
 function test(name: string, fn: () => void) {
@@ -203,6 +204,38 @@ test('two floating parts in the same layer are two islands', () => {
   const r = sliceResin({ positions: concat(base, a, b), printer: tiny, settings: binary, softwareVersion: 't' })
   assert.equal(r.islandCount, 2)
   assert.deepEqual(r.islands.map((i) => i.layer), [45, 45])
+})
+
+test('exposure test: five pieces at stepped grey levels with pins, holes and counting dots', () => {
+  const pr: ResinPrinter = { id: 'e', name: 'Exp', resX: 1200, resY: 400, sizeX: 120, sizeY: 40, sizeZ: 50 }
+  const r = exposureTest(pr, { ...DEFAULT_RESIN, exposure: 2, layerHeight: 0.05 }, 't')
+  assert.deepEqual(r.times, TEST_LEVELS.map((f) => Math.round(2 * f * 10) / 10))
+  assert.equal(r.layers, 100)
+  const file = join(r.parts)
+  const { layers, endingOk } = readLayers(file)
+  assert.ok(endingOk && layers.every((l) => l.checksumOk))
+  assert.ok(Math.abs(layers[60]!.exposure - 2.8) < 1e-5, 'feature layers use the longest time')
+  const { px, count } = image(file, 60)
+  assert.equal(count, 1200 * 400)
+  // Pieces are 10 mm (100 px) with 3 mm gaps, centred: 62 mm wide in all, so the first starts at column 290.
+  const greys = new Set<number>()
+  for (let i = 0; i < 5; i++) {
+    const c0 = 290 + i * 130
+    // Frame pixel near the piece's left edge, middle row.
+    greys.add(px[200 * 1200 + c0 + 3]!)
+    // Counting dots: v = 1.2..1.8 mm up from the piece bottom (rows 232-237), one per index.
+    let dots = 0
+    for (let k = 0; k < 5; k++) if (px[234 * 1200 + c0 + 19 + k * 11]) dots++
+    assert.equal(dots, i + 1, `piece ${i} dots`)
+  }
+  assert.deepEqual([...greys], TEST_LEVELS.map((f) => Math.round((255 * f) / 1.4)))
+  // The 0.9 mm hole in the block is open, its neighbourhood solid (piece 3, centre at u=8, v=6.8).
+  const c0 = 290 + 2 * 130
+  assert.equal(px[181 * 1200 + c0 + 80], 0)
+  assert.ok(px[181 * 1200 + c0 + 70]! > 0)
+  // Base layers are solid at full brightness.
+  const base = image(file, 5).px
+  assert.equal(base[200 * 1200 + c0 + 50], 255)
 })
 
 test('a 12K knot slices in reasonable time', () => {

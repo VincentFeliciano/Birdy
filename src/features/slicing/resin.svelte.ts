@@ -32,6 +32,8 @@ export interface ResinResult {
   name: string
   islands: ResinIsland[]
   islandCount: number
+  /** For the exposure test print: each piece's exposure, left to right. */
+  test?: number[]
 }
 
 export const resin = $state({
@@ -205,6 +207,43 @@ export async function sliceResinModel() {
   }
 }
 
+/** Builds the exposure test print for the chosen printer around the current exposure. */
+export async function makeExposureTest() {
+  clearResult()
+  resin.error = null
+  resin.slicing = true
+  resin.progress = 0
+  const printer = $state.snapshot(resinPrinter())
+  const settings = $state.snapshot(resin.settings)
+  try {
+    const out = (await runResin(
+      { kind: 'test', stl: new Uint8Array(0), printer, settings, softwareVersion: updates.state?.current ?? 'dev' },
+      (p) => (resin.progress = p),
+    )) as Awaited<ReturnType<typeof runResin>> & { times?: number[] }
+    parts = out.parts
+    resin.result = {
+      layers: out.layers,
+      printSeconds: out.printSeconds,
+      volumeMm3: out.volumeMm3,
+      weightG: out.weightG,
+      bytes: out.bytes,
+      size: out.size,
+      printer,
+      modelId: ws.activeId,
+      name: `exposure-test-${settings.exposure}s`,
+      islands: [],
+      islandCount: 0,
+      test: out.times,
+    }
+    showLayer(Math.round(out.layers * 0.6))
+  } catch (err) {
+    const msg = (err as Error).message
+    if (msg !== 'canceled') resin.error = msg
+  } finally {
+    resin.slicing = false
+  }
+}
+
 export function cancelResinSlice() {
   cancelResin()
 }
@@ -257,10 +296,16 @@ export function showLayer(n: number) {
   const view = new DataView(rec.buffer, rec.byteOffset, rec.byteLength)
   const len = view.getUint32(66)
   const image = rec.subarray(71, 71 + len - 2)
-  const { resX, resY } = r.printer
-  const scale = Math.max(1, Math.ceil(resX / 720))
-  const w = Math.ceil(resX / scale)
-  const h = Math.ceil(resY / scale)
+  const { resX, resY, sizeX, sizeY } = r.printer
+  // Show the part of the plate the print is on (it is centred), with a margin, not the whole screen.
+  const margin = 6
+  const cropW = Math.min(resX, Math.ceil(((r.size.x + margin * 2) / sizeX) * resX))
+  const cropH = Math.min(resY, Math.ceil(((r.size.y + margin * 2) / sizeY) * resY))
+  const c0 = Math.floor((resX - cropW) / 2)
+  const r0 = Math.floor((resY - cropH) / 2)
+  const scale = Math.max(cropW / 720, cropH / 400, 1)
+  const w = Math.max(1, Math.ceil(cropW / scale))
+  const h = Math.max(1, Math.ceil(cropH / scale))
   const cells = new Uint8Array(w * h)
   let pos = 0
   decodeLayer(image, (length, value) => {
@@ -271,9 +316,13 @@ export function showLayer(n: number) {
         const row = Math.floor(p / resX)
         const col = p % resX
         const n2 = Math.min(left, resX - col)
-        const base = Math.floor(row / scale) * w
-        const end = Math.floor((col + n2 - 1) / scale)
-        for (let c = Math.floor(col / scale); c <= end; c++) if (cells[base + c]! < value) cells[base + c] = value
+        const cy = Math.floor((row - r0) / scale)
+        if (cy >= 0 && cy < h) {
+          const base = cy * w
+          const from = Math.max(0, Math.floor((col - c0) / scale))
+          const end = Math.min(w - 1, Math.floor((col + n2 - 1 - c0) / scale))
+          for (let c = from; c <= end; c++) if (cells[base + c]! < value) cells[base + c] = value
+        }
         p += n2
         left -= n2
       }
@@ -305,7 +354,7 @@ export function showLayer(n: number) {
     g.strokeStyle = picked ? '#ff3df2' : 'rgba(255, 61, 242, 0.75)'
     g.lineWidth = picked ? 3 : 2
     g.beginPath()
-    g.arc(isl.col / scale, isl.row / scale, Math.max(6, isl.radiusPx / scale + 5), 0, Math.PI * 2)
+    g.arc((isl.col - c0) / scale, (isl.row - r0) / scale, Math.max(6, isl.radiusPx / scale + 5), 0, Math.PI * 2)
     g.stroke()
   })
   resin.layerUrl = canvas.toDataURL('image/png')
