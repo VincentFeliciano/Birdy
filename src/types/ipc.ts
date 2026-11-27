@@ -296,6 +296,11 @@ export interface Api {
     /** Restyles the new-tab page with the neon colour (#RRGGBB). */
     setAccent(hex: string): void
   }
+  resin: {
+    /** Save dialog for a sliced resin file, sent in pieces. */
+    save(req: { suggestedName: string; parts: Uint8Array[] }): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>
+    reveal(path: string): void
+  }
   slicer: {
     list(): Promise<SlicersState>
     choose(): Promise<SlicersState>

@@ -11,6 +11,7 @@ import { Library } from './library'
 import { chooseSlicer, listSlicers, openInSlicer, setDefaultSlicer } from './slicer-launcher'
 import { DownloadManager } from './download-manager'
 import { openModelDialog, reopenSaved, saveModel, workspaceDirs } from './file-system'
+import { revealResinFile, saveResinFile } from './resin-save'
 import { assertTrusted, isId, isRect, isShortString, setTrustedUi } from './security'
 import { SlicingEngine } from './slicing/engine'
 import { importCandidates, importSettings } from './slicing/import'
@@ -179,6 +180,8 @@ function registerIpc(exportsDir: string) {
 
   handle('files:open-model', async () => (win ? openModelDialog(win) : null))
   handle('files:save-model', async (req) => (win ? saveModel(win, req as SaveRequest, exportsDir) : { ok: false }))
+  handle('resin:save', async (req) => (win ? saveResinFile(win, req, exportsDir) : { ok: false }))
+  on('resin:reveal', (path) => revealResinFile(path))
   handle('files:reopen-saved', async (path) => reopenSaved(path))
 
   handle('library:get', async () => library?.get())
@@ -299,6 +302,8 @@ function maybeScreenshot() {
       const printersPort = process.argv.find((a) => a.startsWith('--demo-printers='))?.slice('--demo-printers='.length)
       if (printersPort) await win.webContents.executeJavaScript(`window.__demoPrinters = ${JSON.stringify(printersPort)}`)
       if (process.argv.includes('--demo-install')) await win.webContents.executeJavaScript('window.__demoInstall = true')
+      const resinDemo = process.argv.find((a) => a.startsWith('--demo-resin='))?.slice('--demo-resin='.length)
+      if (resinDemo) await win.webContents.executeJavaScript(`window.__demoResin = ${JSON.stringify(resinDemo)}`)
       const repairDemo = process.argv.find((a) => a.startsWith('--demo-repair='))?.slice('--demo-repair='.length)
       if (repairDemo) await win.webContents.executeJavaScript(`window.__demoRepair = ${JSON.stringify(repairDemo)}`)
       try {

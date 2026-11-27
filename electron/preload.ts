@@ -76,6 +76,10 @@ const api: Api = {
   theme: {
     setAccent: (hex) => ipcRenderer.send('theme:accent', hex),
   },
+  resin: {
+    save: (req) => ipcRenderer.invoke('resin:save', req),
+    reveal: (path) => ipcRenderer.send('resin:reveal', path),
+  },
   slicer: {
     list: () => ipcRenderer.invoke('slicer:list'),
     choose: () => ipcRenderer.invoke('slicer:choose'),
