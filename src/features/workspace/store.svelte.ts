@@ -13,6 +13,7 @@ import type { BedSize, MarkKey, PrintMarks, PrintReport } from '../../engine/geo
 import { packRows } from '../../engine/geometry/arrange'
 import { rankOrientations } from '../../engine/geometry/orient'
 import { settle } from '../../engine/geometry/settle'
+import { splitShells } from '../../engine/geometry/shells'
 
 function storedBed(): BedSize {
   try {
@@ -87,6 +88,8 @@ export const ws = $state({
   /** Models on the active tab's plate, and which one the transform tools act on. */
   parts: [] as { name: string; triangles: number }[],
   selPart: 0,
+  /** Show only the selected part in the 3D view. */
+  isolate: false,
 })
 
 export function remember() {
@@ -355,6 +358,7 @@ export async function openModelFile(file: ModelFile) {
 }
 
 export function activate(id: string, frame = false) {
+  if (ws.isolate) setIsolate(false)
   const doc = docs.get(id)
   if (!doc) return
   if (ws.activeId !== id) modelListener.call('switch')
@@ -785,6 +789,7 @@ export function selectPart(i: number) {
   doc.sel = part
   ws.selPart = i
   viewer?.setTarget(part)
+  if (ws.isolate) viewer?.setIsolated(part)
   refresh()
 }
 
@@ -849,6 +854,67 @@ function copyName(doc: Doc, name: string) {
 }
 
 /** Takes the selected model off the plate (the last one stays; close the tab instead). */
+/** Shows only the selected part in the 3D view, or all of them again. */
+export function setIsolate(on: boolean) {
+  ws.isolate = on
+  const doc = activeDoc()
+  viewer?.setIsolated(on && doc ? doc.sel : null)
+}
+
+/** A new plate part from world-space triangles, standing where they are. */
+function partFromTriangles(tris: Float32Array, name: string, material: THREE.Material) {
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(tris, 3))
+  geo.computeBoundingBox()
+  const c = geo.boundingBox!.getCenter(new THREE.Vector3())
+  geo.translate(-c.x, -c.y, -c.z)
+  geo.computeVertexNormals()
+  const part = new THREE.Group()
+  part.add(new THREE.Mesh(geo, material))
+  part.position.copy(c)
+  const size = geo.boundingBox!.getSize(new THREE.Vector3())
+  const pi: PartInfo = { name, initialZ: size.z / 2, triangles: tris.length / 9, meshes: 1 }
+  part.userData = pi
+  return part
+}
+
+/**
+ * Splits the selected model into its separate shells, each its own part on the plate, where it
+ * was. Nothing is deleted: tiny shells may be intentional details.
+ */
+export function splitIntoParts() {
+  const doc = activeDoc()
+  if (!doc) return
+  const part = doc.sel
+  part.updateMatrixWorld(true)
+  const shells = splitShells(worldTriangles(part).positions)
+  if (shells.length < 2) {
+    setFixNote('This model is one connected shell; there is nothing to split.')
+    return
+  }
+  if (shells.length > 500) {
+    setFixNote(`It has ${shells.length.toLocaleString()} shells; splitting that many would make the plate unusable.`)
+    return
+  }
+  let material: THREE.Material = defaultMaterial()
+  part.traverse((o) => {
+    const m = o as THREE.Mesh
+    if (m.isMesh && !Array.isArray(m.material)) material = m.material
+  })
+  const base = info(part).name.replace(/\.[^.]+$/, '')
+  const at = partsOf(doc).indexOf(part)
+  const made = shells.map((tris, i) => partFromTriangles(tris, `${base} · shell ${i + 1}`, material.clone()))
+  doc.wrapper.remove(part)
+  doc.beforeRepair?.parts.delete(part)
+  disposeTree(part)
+  made.forEach((p, i) => doc.wrapper.children.splice(at + i, 0, p))
+  for (const p of made) p.parent = doc.wrapper
+  doc.sel = made[0]!
+  setIsolate(false)
+  afterPlateChange(doc)
+  setFixNote(`Split into ${made.length} parts, largest first. Remove any you don't want from the plate list.`)
+}
+
 export function removePart() {
   const doc = activeDoc()
   if (!doc || partsOf(doc).length < 2) return
@@ -864,6 +930,7 @@ export function removePart() {
   }
   doc.sel = partsOf(doc)[Math.max(0, i - 1)]!
   afterPlateChange(doc)
+  if (ws.isolate) viewer?.setIsolated(doc.sel)
 }
 
 /** Puts a new part to the right of everything on the plate, standing on it. */

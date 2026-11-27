@@ -8,7 +8,7 @@ import { isFdmKind } from '../types/slicing'
 import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelte'
 import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
-import { arrangePlate, autoOrient, settleModel, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
+import { arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
@@ -266,6 +266,14 @@ export function installDemo() {
       await until(() => !!ws.report && !ws.checking)
       const st = ws.report!.stats
       console.log(`health: verdict=${ws.report!.verdict} issues=${ws.report!.issues.map((i) => i.code).join(',')} vertices=${st.vertices} intersecting=${st.intersecting} overlap=${st.overlappingParts} thin=${st.thinPct?.toFixed(1)} thinnest=${st.thinnest}`)
+      if (healthDemo === 'split') {
+        splitIntoParts()
+        await until(() => !!ws.report && !ws.checking)
+        console.log(`health split: parts=${ws.parts.length} names=${ws.parts.map((p) => p.name).join(' | ')} note=${ws.fixNote}`)
+        selectPart(1)
+        setIsolate(true)
+        ws.sidebarTab = 'model'
+      }
       if (healthDemo === 'thin' || healthDemo === 'intersect') {
         const issue = ws.report!.issues.find((i) => i.code === healthDemo)
         if (issue?.mark) focusMark(issue.mark)

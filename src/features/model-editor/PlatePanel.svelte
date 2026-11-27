@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte'
   import { fmtInt } from '../../app/format'
-  import { addToPlateFromDialog, arrangePlate, duplicatePart, removePart, selectPart, ws } from '../workspace/store.svelte'
+  import { addToPlateFromDialog, arrangePlate, duplicatePart, removePart, selectPart, setIsolate, splitIntoParts, ws } from '../workspace/store.svelte'
 
   let note = $state<string | null>(null)
   function arrange() {
@@ -33,6 +33,12 @@
     {#if ws.parts.length > 1}
       <button class="ghost" title="Lay all models out on the plate with a gap between them" onclick={arrange}><Icon name="grid" size={13} />Arrange</button>
       <button class="ghost danger" title="Take the selected model off the plate" onclick={removePart}><Icon name="trash" size={13} />Remove</button>
+    {/if}
+    {#if (ws.report?.stats.components ?? 0) > ws.parts.length}
+      <button class="ghost" title="Make each separate shell of the selected model its own part, where it is" onclick={splitIntoParts}><Icon name="shells" size={13} />Split shells</button>
+    {/if}
+    {#if ws.parts.length > 1}
+      <button class="ghost" class:on={ws.isolate} aria-pressed={ws.isolate} title="Show only the selected model in the 3D view" onclick={() => setIsolate(!ws.isolate)}><Icon name="eye" size={13} />{ws.isolate ? 'Show all' : 'Isolate'}</button>
     {/if}
   </div>
   {#if note}<p class="err">{note}</p>{/if}
@@ -115,6 +121,10 @@
     justify-content: center;
     font-size: 12px;
     height: 28px;
+  }
+  .ghost.on {
+    color: var(--accent);
+    border-color: var(--neon-line);
   }
   .ghost.danger:hover {
     color: var(--danger);

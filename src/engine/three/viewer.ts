@@ -594,6 +594,19 @@ export class Viewer {
   }
 
   /** Points the gizmo and bounding box at one part of the model. */
+  /**
+   * Shows only `part` of the model (null shows them all). The others move to a layer the camera
+   * does not draw, so they stay in the scene for saving and checking, and can't be clicked.
+   */
+  setIsolated(part: THREE.Object3D | null) {
+    if (!this.model) return
+    for (const child of this.model.children) {
+      const hide = !!part && child !== part
+      child.traverse((o) => (hide ? o.layers.set(2) : o.layers.set(0)))
+    }
+    this.changed()
+  }
+
   setTarget(target: THREE.Object3D | null) {
     this.target = target
     this.attachGizmo()
