@@ -24,6 +24,7 @@
     saveToLibrary,
     sendToSlicer,
     dropToBed,
+    settleModel,
     mirror,
     reopenSaved,
     resetTransform,
@@ -302,6 +303,7 @@
             <button class="ghost" onclick={() => mirror('y')}><Icon name="mirror" size={14} />Mirror Y</button>
             <button class="ghost" onclick={() => mirror('z')}><Icon name="mirror" size={14} />Mirror Z</button>
             <button class="ghost" onclick={dropToBed}><Icon name="floor" size={14} />Drop to plate</button>
+            <button class="ghost" title="Let it come to rest as if set down on the plate: it tips over until it stands steadily" onclick={settleModel}><Icon name="settle" size={14} />Settle</button>
             <button class="ghost" title="Turn the model so it needs the fewest supports" onclick={autoOrient}><Icon name="rotate" size={14} />Auto-orient</button>
             <button class="ghost" onclick={centerOnBed}><Icon name="center" size={14} />Center</button>
             <button class="ghost" onclick={resetTransform}><Icon name="reset" size={14} />Reset</button>

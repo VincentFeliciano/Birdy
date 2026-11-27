@@ -13,6 +13,7 @@ import {
   centerOnBed,
   checkNow,
   dropToBed,
+  settleModel,
   duplicatePart,
   fit,
   openFromDialog,
@@ -144,6 +145,7 @@ export function commands(): Command[] {
 
     { id: 'orient', title: 'Auto-orient for printing', group: 'Model', words: 'rotate overhang flat', when: hasModel, run: autoOrient },
     { id: 'drop', title: 'Drop the model onto the bed', group: 'Model', words: 'floor', when: hasModel, run: dropToBed },
+    { id: 'settle', title: 'Settle: let it tip over and rest on the plate', group: 'Model', words: 'floor gravity drop rest stable lay flat', when: hasModel, run: settleModel },
     { id: 'center', title: 'Center on the bed', group: 'Model', when: hasModel, run: centerOnBed },
     { id: 'reset', title: 'Reset position, rotation and scale', group: 'Model', words: 'transform undo', when: hasModel, run: resetTransform },
     { id: 'check', title: 'Run the print check again', group: 'Model', words: 'problems errors', when: hasModel, run: checkNow },

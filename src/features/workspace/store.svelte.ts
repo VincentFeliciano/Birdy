@@ -12,6 +12,7 @@ import { defaultMaterial } from '../../engine/loaders/loadModel'
 import type { BedSize, MarkKey, PrintMarks, PrintReport } from '../../engine/geometry/printCheck'
 import { packRows } from '../../engine/geometry/arrange'
 import { rankOrientations } from '../../engine/geometry/orient'
+import { settle } from '../../engine/geometry/settle'
 
 function storedBed(): BedSize {
   try {
@@ -905,6 +906,33 @@ function afterPlateChange(doc: Doc) {
  * Turns the selected model so it needs the fewest supports, resting on a flat side where it has
  * one, then stands it on the plate where it was.
  */
+/**
+ * Lets the model come to rest as if dropped on the plate: it tips over its lowest points until it
+ * stands steadily, then sits on the plate where it was.
+ */
+export function settleModel() {
+  const doc = activeDoc()
+  if (!doc) return
+  const part = doc.sel
+  part.updateMatrixWorld(true)
+  const r = settle(worldTriangles(part).positions)
+  apply((w) => {
+    const center = new THREE.Box3().setFromObject(w, true).getCenter(new THREE.Vector3())
+    w.quaternion.premultiply(r.rotation)
+    w.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(w, true)
+    const c = box.getCenter(new THREE.Vector3())
+    w.position.x += center.x - c.x
+    w.position.y += center.y - c.y
+    w.position.z -= box.min.z
+  })
+  setFixNote(
+    r.tips === 0
+      ? 'Already resting steadily; set down on the plate.'
+      : `Settled: tipped over ${r.tips === 1 ? 'once' : `${r.tips} times`} (${Math.round(r.degrees)}°) to rest steadily on the plate.`,
+  )
+}
+
 export function autoOrient() {
   const doc = activeDoc()
   if (!doc) return

@@ -26,6 +26,7 @@
     ortho: '<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 12h16M12 4v16"/>',
     mirror: '<path d="M12 3v18" stroke-dasharray="2 2"/><path d="M9 7l-5 5 5 5zM15 7l5 5-5 5z"/>',
     floor: '<path d="M12 4v10M8 10l4 4 4-4M4 20h16"/>',
+    settle: '<path d="M4 20h16"/><path d="M8 16l4-9 6 3-3 6z"/><path d="M5 9a6 6 0 0 1 5-5"/><path d="M10 4l0 2.5L7.6 5.2"/>',
     center: '<circle cx="12" cy="12" r="3"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>',
     reset: '<path d="M4 7v5h5"/><path d="M4.6 12A8 8 0 1 0 7 6.3"/>',
     save: '<path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8M7 21v-7h10v7"/>',

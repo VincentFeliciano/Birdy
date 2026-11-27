@@ -8,7 +8,7 @@ import { isFdmKind } from '../types/slicing'
 import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelte'
 import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
-import { arrangePlate, autoOrient, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
+import { arrangePlate, autoOrient, settleModel, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
@@ -248,6 +248,36 @@ export function installDemo() {
         await new Promise((res) => setTimeout(res, 300))
         ;[...document.querySelectorAll<HTMLButtonElement>('[role=tab]')].find((t) => t.textContent?.includes('Print history'))?.click()
       }
+      return
+    }
+    if ((window as unknown as { __demoSettle?: boolean }).__demoSettle) {
+      // A tall block leaning well past its edge, floating above the plate: Settle should tip it onto its side.
+      const block = new THREE.Mesh(new THREE.BoxGeometry(14, 20, 50))
+      block.rotation.set(0.6, 0.25, 0.2)
+      block.position.z = 40
+      block.updateMatrixWorld(true)
+      const data = exportModel(block, 'stl')
+      await openModelFile({ name: 'leaning-block.stl', format: 'stl', size: data.byteLength, data })
+      ws.layout = 'workspace'
+      ws.sidebarTab = 'transform'
+      await until(() => !!ws.report && !ws.checking)
+      const size = () => {
+        // Bounds of the model as it would be saved (binary STL as exported).
+        const stl = exportActive('stl')!
+        const view = new DataView(stl.buffer, stl.byteOffset, stl.byteLength)
+        const b = new THREE.Box3()
+        const pt = new THREE.Vector3()
+        for (let t = 0; t < view.getUint32(80, true); t++)
+          for (let k = 0; k < 3; k++) b.expandByPoint(pt.set(view.getFloat32(84 + t * 50 + 12 + k * 12, true), view.getFloat32(84 + t * 50 + 16 + k * 12, true), view.getFloat32(84 + t * 50 + 20 + k * 12, true)))
+        const v = b.getSize(new THREE.Vector3())
+        return `${v.x.toFixed(1)} x ${v.y.toFixed(1)} x ${v.z.toFixed(1)} min z ${b.min.z.toFixed(3)}`
+      }
+      console.log(`settle before: ${size()}`)
+      settleModel()
+      await new Promise((r) => setTimeout(r, 100))
+      console.log(`settle after: ${size()} | ${ws.fixNote}`)
+      settleModel()
+      console.log(`settle again: ${size()} | ${ws.fixNote}`)
       return
     }
     if ((window as unknown as { __demoOrient?: boolean }).__demoOrient) {
