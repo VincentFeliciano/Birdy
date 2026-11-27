@@ -4,6 +4,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js'
 import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { VRMLLoader } from 'three/examples/jsm/loaders/VRMLLoader.js'
 import type { ModelFile } from '../../types/ipc'
 import { countTriangles } from '../geometry/stats'
 
@@ -96,6 +97,27 @@ export async function parseModel(file: ModelFile): Promise<ParsedModel> {
       const gltf = await new GLTFLoader().parseAsync(file.format === 'gltf' ? new TextDecoder().decode(buf) : buf, '')
       root = gltf.scene
       // glTF is Y-up; stand it upright on the Z-up build plate.
+      root.rotation.x = Math.PI / 2
+      break
+    }
+    case 'wrl': {
+      root = new VRMLLoader().parse(new TextDecoder().decode(buf), '')
+      // Only the shapes: VRML scenes can carry lights, backgrounds and viewpoints too.
+      const drop: THREE.Object3D[] = []
+      root.traverse((o) => {
+        const mesh = o as THREE.Mesh
+        if ((o as THREE.Light).isLight || (o as THREE.Camera).isCamera || (mesh.isMesh && (mesh.geometry as THREE.SphereGeometry).type === 'SphereGeometry' && (mesh.material as THREE.Material).side === THREE.BackSide)) drop.push(o)
+        else if (mesh.isMesh) {
+          if (!hasUsableNormals(mesh.geometry)) mesh.geometry.computeVertexNormals()
+          const old = mesh.material as THREE.MeshStandardMaterial
+          const mat = defaultMaterial()
+          if (old?.color && !old.color.equals(new THREE.Color(1, 1, 1))) mat.color.copy(old.color)
+          if (mesh.geometry.getAttribute('color')) mat.vertexColors = true
+          mesh.material = mat
+        }
+      })
+      for (const o of drop) o.removeFromParent()
+      // VRML is Y-up like glTF; stand it upright on the Z-up build plate.
       root.rotation.x = Math.PI / 2
       break
     }

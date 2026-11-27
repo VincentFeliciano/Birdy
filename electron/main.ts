@@ -351,6 +351,7 @@ function maybeScreenshot() {
       if (uiDemo) await win.webContents.executeJavaScript(`window.__demoUi = ${JSON.stringify(uiDemo)}`)
       if (process.argv.includes('--demo-orient')) await win.webContents.executeJavaScript('window.__demoOrient = true')
       if (process.argv.includes('--demo-settle')) await win.webContents.executeJavaScript('window.__demoSettle = true')
+      if (process.argv.includes('--demo-formats')) await win.webContents.executeJavaScript('window.__demoFormats = true')
       const plateDemo = process.argv.find((a) => a.startsWith('--demo-plate='))?.slice('--demo-plate='.length)
       if (plateDemo) await win.webContents.executeJavaScript(`window.__demoPlate = ${JSON.stringify(plateDemo)}`)
       const resinDemo = process.argv.find((a) => a.startsWith('--demo-resin='))?.slice('--demo-resin='.length)

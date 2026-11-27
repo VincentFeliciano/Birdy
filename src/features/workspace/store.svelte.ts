@@ -297,9 +297,31 @@ export async function openModelFile(file: ModelFile) {
   await new Promise((r) => setTimeout(r, 30))
   try {
     const { root: obj, warnings } = await parseModel(file)
-    const { wrapper: part, initialZ } = wrap(obj, file.name)
     const plate = new THREE.Group()
-    plate.add(part)
+    // A 3MF with several objects (a saved plate) opens as that many parts, where they were.
+    const objects = file.format === '3mf' ? obj.children.filter((c) => countTriangles(c) > 0) : []
+    let part: THREE.Group
+    let initialZ: number
+    if (objects.length > 1 && objects.length <= 200) {
+      obj.updateMatrixWorld(true)
+      const all = new THREE.Box3().setFromObject(obj, true)
+      const mid = all.getCenter(new THREE.Vector3())
+      const parts = objects.map((child, i) => {
+        const box = new THREE.Box3().setFromObject(child, true)
+        const c = box.getCenter(new THREE.Vector3())
+        child.matrixWorld.decompose(child.position, child.quaternion, child.scale)
+        child.removeFromParent()
+        const w = wrap(child, child.name || `${file.name} ${i + 1}`)
+        w.wrapper.position.set(c.x - mid.x, c.y - mid.y, c.z - all.min.z)
+        plate.add(w.wrapper)
+        return w
+      })
+      part = parts[0]!.wrapper
+      initialZ = parts[0]!.initialZ
+    } else {
+      ;({ wrapper: part, initialZ } = wrap(obj, file.name))
+      plate.add(part)
+    }
     const id = crypto.randomUUID()
     docs.set(id, {
       wrapper: plate,
@@ -310,8 +332,8 @@ export async function openModelFile(file: ModelFile) {
       report: null,
       marks: null,
       fixNote: null,
-      triangles: countTriangles(obj),
-      meshes: countMeshes(obj),
+      triangles: countTriangles(plate),
+      meshes: countMeshes(plate),
     })
     ws.models.push({
       id,
@@ -668,8 +690,8 @@ export async function saveAs() {
   ws.error = null
   ws.notice = null
   try {
-    const data = exportModel(doc.wrapper, ws.exportFormat)
     const stem = meta.name.replace(/\.[^.]+$/, '')
+    const data = exportModel(doc.wrapper, ws.exportFormat, stem)
     const res = await window.api.files.saveModel({
       suggestedName: `${stem}-edited.${ws.exportFormat}`,
       format: ws.exportFormat,

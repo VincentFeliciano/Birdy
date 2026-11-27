@@ -25,7 +25,7 @@
     {
       target: '.ws-col',
       title: 'Your workspace',
-      text: 'Models you download open here by themselves. You can also drop STL, 3MF, OBJ, GLB or PLY files anywhere in the window. Birdy checks each one for printing problems straight away.',
+      text: 'Models you download open here by themselves. You can also drop STL, 3MF, OBJ, GLB, PLY or WRL files anywhere in the window. Birdy checks each one for printing problems straight away.',
       layout: 'split',
     },
     {

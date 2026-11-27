@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, join, relative, isAbsolute } from 'node:path'
-import { formatFromName, MODEL_FORMATS, type ModelFile, type SaveRequest, type SaveResult } from '../src/types/ipc'
+import { EXPORT_FORMATS, formatFromName, MODEL_FORMATS, type ModelFile, type SaveRequest, type SaveResult } from '../src/types/ipc'
 
 export const MAX_MODEL_BYTES = 512 * 1024 * 1024
 
@@ -77,7 +77,7 @@ export async function reopenSaved(path: unknown): Promise<ModelFile> {
 
 /** Save As: never touches the original, writes atomically, then reads back to verify. */
 export async function saveModel(win: BrowserWindow, req: SaveRequest, exportsDir: string): Promise<SaveResult> {
-  if (!req || (req.format !== 'stl' && req.format !== 'obj')) return { ok: false, error: 'Unsupported export format.' }
+  if (!req || !EXPORT_FORMATS.includes(req.format)) return { ok: false, error: 'Unsupported export format.' }
   if (!(req.data instanceof Uint8Array) || req.data.byteLength === 0 || req.data.byteLength > MAX_MODEL_BYTES) {
     return { ok: false, error: 'There is no model data to save.' }
   }

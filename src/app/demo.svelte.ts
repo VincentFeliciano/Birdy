@@ -250,6 +250,34 @@ export function installDemo() {
       }
       return
     }
+    if ((window as unknown as { __demoFormats?: boolean }).__demoFormats) {
+      // 3MF round trip of a two-part plate, then a small VRML file.
+      await openSample()
+      duplicatePart(1)
+      await new Promise((r) => setTimeout(r, 100))
+      const data = exportActive('3mf')!
+      console.log(`formats 3mf bytes: ${data.byteLength}`)
+      await openModelFile({ name: 'roundtrip.3mf', format: '3mf', size: data.byteLength, data })
+      console.log(`formats 3mf reopened: models=${ws.models.length} parts=${ws.parts.length} tris=${ws.report?.stats.triangles ?? '?'}`)
+      await until(() => !!ws.report && !ws.checking)
+      console.log(`formats 3mf check: watertight=${ws.report?.stats.watertight} components=${ws.report?.stats.components} tris=${ws.report?.stats.triangles}`)
+      const wrl = `#VRML V2.0 utf8
+DirectionalLight { direction 0 -1 0 }
+Background { skyColor [ 0 0 1 ] }
+Shape {
+  appearance Appearance { material Material { diffuseColor 0.9 0.4 0.1 } }
+  geometry IndexedFaceSet {
+    coord Coordinate { point [ 0 0 0, 20 0 0, 20 10 0, 0 10 0, 0 0 30, 20 0 30, 20 10 30, 0 10 30 ] }
+    coordIndex [ 0 3 2 1 -1, 4 5 6 7 -1, 0 1 5 4 -1, 1 2 6 5 -1, 2 3 7 6 -1, 3 0 4 7 -1 ]
+  }
+}`
+      const bytes = new TextEncoder().encode(wrl)
+      await openModelFile({ name: 'block.wrl', format: 'wrl', size: bytes.byteLength, data: bytes })
+      await until(() => !!ws.report && !ws.checking)
+      console.log(`formats wrl: error=${ws.error} watertight=${ws.report?.stats.watertight} tris=${ws.report?.stats.triangles} size=${JSON.stringify(ws.report?.stats.size)}`)
+      ws.layout = 'workspace'
+      return
+    }
     if ((window as unknown as { __demoSettle?: boolean }).__demoSettle) {
       // A tall block leaning well past its edge, floating above the plate: Settle should tip it onto its side.
       const block = new THREE.Mesh(new THREE.BoxGeometry(14, 20, 50))

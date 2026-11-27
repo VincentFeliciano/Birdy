@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import Icon from '../../components/Icon.svelte'
   import { library } from '../../stores/library.svelte'
-  import type { SlicersState } from '../../types/ipc'
+  import { EXPORT_FORMATS, type SlicersState } from '../../types/ipc'
   import NumField from '../../components/NumField.svelte'
   import SlicePanel from '../slicing/SlicePanel.svelte'
   import PlatePanel from './PlatePanel.svelte'
@@ -315,7 +315,7 @@
 
     <footer class="export">
       <div class="fmt" role="radiogroup" aria-label="Export format">
-        {#each ['stl', 'obj'] as const as f}
+        {#each EXPORT_FORMATS as f}
           <button role="radio" aria-checked={ws.exportFormat === f} class="mono" class:on={ws.exportFormat === f} onclick={() => (ws.exportFormat = f)}>
             {f.toUpperCase()}
           </button>

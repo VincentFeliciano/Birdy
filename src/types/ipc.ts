@@ -1,8 +1,9 @@
 // Typed contract between the Electron main process and the trusted app UI.
 
-export type ModelFormat = 'stl' | '3mf' | 'obj' | 'glb' | 'gltf' | 'ply'
-export const MODEL_FORMATS: readonly ModelFormat[] = ['stl', '3mf', 'obj', 'glb', 'gltf', 'ply']
-export type ExportFormat = 'stl' | 'obj'
+export type ModelFormat = 'stl' | '3mf' | 'obj' | 'glb' | 'gltf' | 'ply' | 'wrl'
+export const MODEL_FORMATS: readonly ModelFormat[] = ['stl', '3mf', 'obj', 'glb', 'gltf', 'ply', 'wrl']
+export type ExportFormat = 'stl' | '3mf' | 'obj'
+export const EXPORT_FORMATS: readonly ExportFormat[] = ['stl', '3mf', 'obj']
 
 export interface Rect {
   x: number
