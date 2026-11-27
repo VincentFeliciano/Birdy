@@ -6,9 +6,11 @@
   import { openFromLibrary, ws } from '../workspace/store.svelte'
   import { fmtBytes } from '../../app/format'
   import type { CheckVerdict } from '../../types/ipc'
+  import HistoryList from '../history/HistoryList.svelte'
+  import { history } from '../history/history.svelte'
 
   const api = window.api
-  type Tab = 'models' | 'bookmarks' | 'about'
+  type Tab = 'models' | 'bookmarks' | 'history' | 'about'
   let tab = $state<Tab>('models')
   let group = $state<string | null>(null) // null = all groups
   let query = $state('')
@@ -154,6 +156,9 @@
         <button role="tab" aria-selected={tab === 'bookmarks'} class:on={tab === 'bookmarks'} onclick={() => (tab = 'bookmarks')}>
           Bookmarks <span class="mono">{library.bookmarks.length}</span>
         </button>
+        <button role="tab" aria-selected={tab === 'history'} class:on={tab === 'history'} onclick={() => (tab = 'history')}>
+          Print history <span class="mono">{history.entries.length}</span>
+        </button>
         <button role="tab" aria-selected={tab === 'about'} class:on={tab === 'about'} onclick={() => (tab = 'about')}>About &amp; credits</button>
       </div>
       {#if tab !== 'about'}
@@ -214,6 +219,8 @@
             {/each}
           </div>
         {/if}
+      {:else if tab === 'history'}
+        <HistoryList {query} />
       {:else}
         <div class="about">
           <div class="about-logo"><Logo size={72} glow={2} /></div>

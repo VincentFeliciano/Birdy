@@ -3,6 +3,8 @@ import { DEFAULT_RESIN, RESIN_PRINTERS, type ResinPrinter, type ResinSettings } 
 import { cancelResin, runResin } from '../../engine/resin/runResin'
 import type { ResinIsland } from '../../engine/resin/slice'
 import { updates } from '../../app/updates.svelte'
+import { printCost } from '../../app/costs.svelte'
+import { recordPrint } from '../history/history.svelte'
 import { activeModel, BED, exportActive, getViewer, setBed, ws } from '../workspace/store.svelte'
 
 // Resin (MSLA) slicing: Birdy's own slicer writing Elegoo .goo files.
@@ -255,7 +257,22 @@ export async function saveResin() {
   resin.saveError = null
   try {
     const res = await window.api.resin.save({ suggestedName: `${r.name}.goo`, parts })
-    if (res.ok && res.path) resin.savedPath = res.path
+    if (res.ok && res.path) {
+      resin.savedPath = res.path
+      const s = resin.settings
+      void recordPrint({
+        name: r.test ? `Exposure test (${r.test.join(' / ')} s)` : (activeModel()?.name ?? `${r.name}.stl`),
+        kind: 'resin',
+        how: 'saved',
+        printer: r.printer.name,
+        path: res.path,
+        seconds: r.printSeconds,
+        grams: r.weightG,
+        ml: r.volumeMm3 / 1000,
+        cost: printCost('resin', r.volumeMm3 / 1000, r.printSeconds)?.total ?? null,
+        settings: `${s.layerHeight} mm layers · ${s.exposure} s / ${s.bottomExposure} s × ${s.bottomLayers}`,
+      })
+    }
     else if (!res.canceled) resin.saveError = res.error ?? 'Could not save the file.'
   } catch (err) {
     resin.saveError = (err as Error).message

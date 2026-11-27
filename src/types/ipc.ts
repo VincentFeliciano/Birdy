@@ -212,6 +212,30 @@ export type Unsubscribe = () => void
 
 export type UpdateStatus = 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error' | 'unsupported'
 
+/** A print Birdy saved or sent, as entered by the app. */
+export interface HistoryInput {
+  name: string
+  kind: 'fdm' | 'resin'
+  /** saved = file saved to disk, sent = uploaded to a network printer, usb = printed over a cable. */
+  how: 'saved' | 'sent' | 'usb'
+  printer: string
+  path?: string
+  seconds: number | null
+  grams: number | null
+  ml: number | null
+  cost: number | null
+  /** Short summary, e.g. "0.2 mm · 15% infill · PLA". */
+  settings: string
+  thumbnail?: string
+}
+
+export interface HistoryEntry extends HistoryInput {
+  id: string
+  at: number
+  outcome: 'ok' | 'failed' | null
+  note: string
+}
+
 export interface UpdateState {
   status: UpdateStatus
   /** Installed version. */
@@ -295,6 +319,15 @@ export interface Api {
   theme: {
     /** Restyles the new-tab page with the neon colour (#RRGGBB). */
     setAccent(hex: string): void
+  }
+  history: {
+    list(): Promise<HistoryEntry[]>
+    add(e: HistoryInput): Promise<HistoryEntry>
+    update(id: string, patch: { outcome?: 'ok' | 'failed' | null; note?: string }): Promise<void>
+    remove(id: string): Promise<void>
+    /** Shows the saved file in File Explorer; false when it is gone. */
+    reveal(id: string): Promise<boolean>
+    onChange(cb: (entries: HistoryEntry[]) => void): Unsubscribe
   }
   resin: {
     /** Save dialog for a sliced resin file, sent in pieces. */

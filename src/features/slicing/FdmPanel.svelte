@@ -5,6 +5,8 @@
   import type { PresetRef, SupportMode } from '../../types/slicing'
   import { fitsMachine } from '../../../electron/slicing/presets'
   import PrinterManager from './PrinterManager.svelte'
+  import PricesEditor from '../../components/PricesEditor.svelte'
+  import { fmtMoney, prices, printCost } from '../../app/costs.svelte'
   import { cancelUsb, pauseUsb, usb, usbActive } from './usb.svelte'
   import {
     cancelSlice,
@@ -266,7 +268,11 @@
             <div><span class="k">Filament</span><span class="v mono">{summary.filamentG !== null ? `${summary.filamentG.toFixed(1)} g` : '—'}</span></div>
             <div><span class="k">Length</span><span class="v mono">{summary.filamentMm !== null ? `${(summary.filamentMm / 1000).toFixed(2)} m` : '—'}</span></div>
             <div><span class="k">Layers</span><span class="v mono">{summary.layers ?? '—'}</span></div>
+            <div class="cost" title="Filament{prices.kwh > 0 ? ' plus electricity' : ''}, at your prices">
+              <span class="k">Cost</span><span class="v mono">{fmtMoney(printCost('fdm', summary.filamentG, summary.printSeconds)?.total)}</span>
+            </div>
           </div>
+          <PricesEditor kind="fdm" />
           <div class="row">
             <button class="ghost" class:on={sl.preview.on} disabled={!sl.preview.ready} onclick={() => setPreviewOn(!sl.preview.on)}>
               {#if sl.preview.loading}<span class="spinner"></span>{:else}<Icon name="layers" size={14} />{/if}
@@ -585,6 +591,9 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
+  }
+  .stats .cost {
+    grid-column: span 2;
   }
   .stats > div {
     display: flex;

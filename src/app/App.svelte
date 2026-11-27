@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { initHistory } from '../features/history/history.svelte'
   import { onMount } from 'svelte'
   import TopBar from '../features/browser/TopBar.svelte'
   import WebPanel from '../features/browser/WebPanel.svelte'
@@ -36,7 +37,9 @@
     applyAccent(theme.accent)
     void initUpdates()
     const offModels = initModels()
+    const offHistory = initHistory()
     return () => {
+      offHistory()
       offStores()
       offLibrary()
       offModel()

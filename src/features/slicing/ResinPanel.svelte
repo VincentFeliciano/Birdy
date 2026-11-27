@@ -1,5 +1,7 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte'
+  import PricesEditor from '../../components/PricesEditor.svelte'
+  import { fmtMoney, prices, printCost } from '../../app/costs.svelte'
   import { fmtBytes } from '../../app/format'
   import { RESIN_PRINTERS, type ResinPrinter, type ResinSettings } from '../../engine/resin/printers'
   import { activeModel, ws } from '../workspace/store.svelte'
@@ -123,7 +125,11 @@
         <div><span class="k">Resin</span><span class="v mono">{(r.volumeMm3 / 1000).toFixed(1)} ml</span></div>
         <div><span class="k">Weight</span><span class="v mono">{r.weightG.toFixed(1)} g</span></div>
         <div><span class="k">Layers</span><span class="v mono">{r.layers}</span></div>
+        <div class="cost" title="Resin{prices.kwh > 0 ? ' plus electricity' : ''}, at your prices">
+          <span class="k">Cost</span><span class="v mono">{fmtMoney(printCost('resin', r.volumeMm3 / 1000, r.printSeconds)?.total)}</span>
+        </div>
       </div>
+      <PricesEditor kind="resin" />
       {#if r.test}
         <!-- The test print has no islands to check. -->
       {:else if r.islandCount}
@@ -343,6 +349,9 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
+  }
+  .stats .cost {
+    grid-column: span 2;
   }
   .stats > div {
     display: flex;

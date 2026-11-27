@@ -2,7 +2,8 @@ import * as THREE from 'three'
 import { importDownloads as importModelsFromDownloads, models as modelsState, openFolder as openModelsFolder, openModel as openModelsModel, setModelsOpen } from '../features/models/store.svelte'
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
-import { arrangePlate, autoOrient, checkNow, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
+import { printCost } from './costs.svelte'
+import { arrangePlate, autoOrient, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, makeExposureTest, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
@@ -91,6 +92,35 @@ export function installDemo() {
         await repairActive()
         await checkNow()
         console.log(`repair direct: ${issueList()} note=${ws.fixNote}`)
+      }
+      return
+    }
+    if ((window as unknown as { __demoHistory?: boolean }).__demoHistory) {
+      await openSample()
+      ws.layout = 'workspace'
+      ws.sidebarTab = 'slice'
+      setSliceMode('resin')
+      chooseResinPrinter('saturn4ultra')
+      await sliceResinModel()
+      const r = resin.result!
+      const sc = document.querySelector('.sidebar .scroll')
+      if (sc) sc.scrollTop = sc.scrollHeight
+      await new Promise((res) => setTimeout(res, 300))
+      const shot = getViewer()?.snapshot(160) ?? undefined
+      const api = window.api.history
+      for (const e of await api.list()) await api.remove(e.id)
+      const base = { kind: 'resin' as const, printer: r.printer.name, seconds: r.printSeconds, grams: r.weightG, ml: r.volumeMm3 / 1000, thumbnail: shot }
+      const a = await api.add({ ...base, name: 'sample-knot.stl', how: 'saved', path: 'C:\nowhere\sample-knot.goo', cost: printCost('resin', r.volumeMm3 / 1000, r.printSeconds)?.total ?? null, settings: '0.05 mm layers · 2.5 s / 30 s × 5' })
+      const b = await api.add({ kind: 'fdm', name: 'bracket.stl', how: 'sent', printer: 'Voron 2.4 (Klipper)', seconds: 5400, grams: 38.2, ml: null, cost: printCost('fdm', 38.2, 5400)?.total ?? null, settings: '0.2 mm layers · 20% infill · Generic PLA' })
+      await api.add({ kind: 'fdm', name: 'cable-clip.3mf', how: 'usb', printer: 'Ender 3 (USB)', seconds: 1260, grams: 6.1, ml: null, cost: printCost('fdm', 6.1, 1260)?.total ?? null, settings: '0.28 mm layers · Generic PETG' })
+      await api.update(a.id, { outcome: 'ok', note: 'Crisp details, supports came off clean.' })
+      await api.update(b.id, { outcome: 'failed', note: 'Warped at the corners; try a brim.' })
+      await new Promise((res) => setTimeout(res, 200))
+      console.log(`history: ${(await api.list()).length} entries, revealMissing=${!(await api.reveal(a.id))}`)
+      if ((window as unknown as { __demoHistory?: string }).__demoHistory === 'library') {
+        ws.layout = 'library'
+        await new Promise((res) => setTimeout(res, 300))
+        ;[...document.querySelectorAll<HTMLButtonElement>('[role=tab]')].find((t) => t.textContent?.includes('Print history'))?.click()
       }
       return
     }

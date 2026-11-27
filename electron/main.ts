@@ -12,6 +12,7 @@ import { chooseSlicer, listSlicers, openInSlicer, setDefaultSlicer } from './sli
 import { DownloadManager } from './download-manager'
 import { openModelDialog, reopenSaved, saveModel, workspaceDirs } from './file-system'
 import { revealResinFile, saveResinFile } from './resin-save'
+import { PrintHistory } from './history'
 import { assertTrusted, isId, isRect, isShortString, setTrustedUi } from './security'
 import { SlicingEngine } from './slicing/engine'
 import { importCandidates, importSettings } from './slicing/import'
@@ -31,6 +32,7 @@ let win: BrowserWindow | null = null
 let browser: BrowserManager | null = null
 let downloads: DownloadManager | null = null
 let models: ModelsManager | null = null
+let history: PrintHistory | null = null
 let library: Library | null = null
 let engine: SlicingEngine | null = null
 let serialCallback: ((portId: string) => void) | null = null
@@ -119,6 +121,7 @@ function createWindow() {
 
   browser = new BrowserManager(win, { session: browserSession, startPageUrl, onShortcut: handleShortcut })
   models = new ModelsManager(win, dirs.models)
+  history = new PrintHistory(win)
   const modelsRef = models
   downloads = new DownloadManager(win, browserSession, dirs.downloads, (p) => modelsRef.importDownload(p))
   library = new Library(dirs.library, (d) => win?.webContents.send('library:changed', d))
@@ -182,6 +185,11 @@ function registerIpc(exportsDir: string) {
   handle('files:save-model', async (req) => (win ? saveModel(win, req as SaveRequest, exportsDir) : { ok: false }))
   handle('resin:save', async (req) => (win ? saveResinFile(win, req, exportsDir) : { ok: false }))
   on('resin:reveal', (path) => revealResinFile(path))
+  handle('history:list', async () => history?.list() ?? [])
+  handle('history:add', async (e) => history?.add(e))
+  handle('history:update', async (id, patch) => history?.update(id, patch))
+  handle('history:remove', async (id) => history?.remove(id))
+  handle('history:reveal', async (id) => history?.reveal(id) ?? false)
   handle('files:reopen-saved', async (path) => reopenSaved(path))
 
   handle('library:get', async () => library?.get())
@@ -302,6 +310,8 @@ function maybeScreenshot() {
       const printersPort = process.argv.find((a) => a.startsWith('--demo-printers='))?.slice('--demo-printers='.length)
       if (printersPort) await win.webContents.executeJavaScript(`window.__demoPrinters = ${JSON.stringify(printersPort)}`)
       if (process.argv.includes('--demo-install')) await win.webContents.executeJavaScript('window.__demoInstall = true')
+      const historyDemo = process.argv.find((a) => a.startsWith('--demo-history='))?.slice('--demo-history='.length)
+      if (historyDemo) await win.webContents.executeJavaScript(`window.__demoHistory = ${JSON.stringify(historyDemo)}`)
       if (process.argv.includes('--demo-orient')) await win.webContents.executeJavaScript('window.__demoOrient = true')
       const plateDemo = process.argv.find((a) => a.startsWith('--demo-plate='))?.slice('--demo-plate='.length)
       if (plateDemo) await win.webContents.executeJavaScript(`window.__demoPlate = ${JSON.stringify(plateDemo)}`)

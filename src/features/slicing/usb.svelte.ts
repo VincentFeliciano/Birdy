@@ -35,7 +35,7 @@ export function cancelUsb() {
 }
 
 /** Must be called from a click: the port picker needs the click's user gesture. */
-export async function startUsbPrint(getGcode: () => Promise<Uint8Array>, name: string, baudRate: number) {
+export async function startUsbPrint(getGcode: () => Promise<Uint8Array>, name: string, baudRate: number, onStarted?: () => void) {
   if (usbActive()) return
   if (!navigator.serial) {
     Object.assign(usb, { status: 'error', message: 'USB printing is not available in this window.' })
@@ -56,7 +56,10 @@ export async function startUsbPrint(getGcode: () => Promise<Uint8Array>, name: s
     usb.message = 'Connecting…'
     const text = new TextDecoder().decode(await getGcode())
     const outcome = await streamGcode(port, text, { baudRate }, ctl, {
-      onStart: (total) => Object.assign(usb, { status: 'printing', total, message: '' }),
+      onStart: (total) => {
+        Object.assign(usb, { status: 'printing', total, message: '' })
+        onStarted?.()
+      },
       onProgress: (sent) => (usb.sent = sent),
       onTemps: (t) => (usb.temps = { ...usb.temps, ...t }),
       onMessage: (m) => (usb.message = m),

@@ -14,6 +14,8 @@ import type {
 } from '../../types/slicing'
 import { fitsMachine } from '../../../electron/slicing/presets'
 import { parseGcodeInWorker } from '../../engine/gcode/runParse'
+import { printCost } from '../../app/costs.svelte'
+import { recordPrint } from '../history/history.svelte'
 import { activeModel, exportActive, getViewer, onModelChange, setBed, ws } from '../workspace/store.svelte'
 import { startUsbPrint } from './usb.svelte'
 
@@ -336,10 +338,30 @@ export function setPreviewTravel(on: boolean) {
   getViewer()?.setPreviewTravel(on)
 }
 
+/** History entry for the current FDM slice. */
+function fdmHistory(how: 'saved' | 'sent' | 'usb', printer: string, path?: string) {
+  const s = sl.result?.summary
+  const o = sl.settings.overrides
+  const parts = [o.layerHeight ? `${o.layerHeight} mm layers` : sl.settings.process, o.infill !== undefined ? `${o.infill}% infill` : '', sl.settings.filament]
+  void recordPrint({
+    name: activeModel()?.name ?? sl.result?.gcodeName ?? 'print',
+    kind: 'fdm',
+    how,
+    printer,
+    path,
+    seconds: s?.printSeconds ?? null,
+    grams: s?.filamentG ?? null,
+    ml: null,
+    cost: printCost('fdm', s?.filamentG ?? null, s?.printSeconds ?? null)?.total ?? null,
+    settings: parts.filter(Boolean).join(' · '),
+  })
+}
+
 export async function saveGcode() {
   const id = sl.result?.jobId
   if (!id) return
   const r = await window.api.engine.saveGcode(id)
+  if (r.ok && r.path) fdmHistory('saved', sl.settings.machine, r.path)
   if (r.ok && r.path) ws.notice = { text: `Saved ${r.path.split(/[\\/]/).pop()} and verified it on disk.` }
   else if (!r.canceled) sl.error = r.error ?? 'Saving the G-code failed.'
 }
@@ -356,12 +378,15 @@ export async function sendToPrinter() {
   sl.sendResult = null
   if (printer.kind === 'serial') {
     // The port picker needs this click's user gesture, so it opens before the G-code is read.
-    void startUsbPrint(() => window.api.engine.readGcode(id), sl.result?.gcodeName ?? 'print.gcode', printer.baudRate ?? 115200)
+    void startUsbPrint(() => window.api.engine.readGcode(id), sl.result?.gcodeName ?? 'print.gcode', printer.baudRate ?? 115200, () =>
+      fdmHistory('usb', printer.name),
+    )
     return
   }
   sl.sending = true
   try {
     sl.sendResult = await window.api.printers.send({ printerId: printer.id, jobId: id, startPrint: sl.startPrint })
+    if (sl.sendResult.ok) fdmHistory('sent', printer.name)
   } catch (err) {
     sl.sendResult = { ok: false, detail: cleanError(err) }
   } finally {

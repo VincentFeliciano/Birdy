@@ -76,6 +76,14 @@ const api: Api = {
   theme: {
     setAccent: (hex) => ipcRenderer.send('theme:accent', hex),
   },
+  history: {
+    list: () => ipcRenderer.invoke('history:list'),
+    add: (e) => ipcRenderer.invoke('history:add', e),
+    update: (id, patch) => ipcRenderer.invoke('history:update', id, patch),
+    remove: (id) => ipcRenderer.invoke('history:remove', id),
+    reveal: (id) => ipcRenderer.invoke('history:reveal', id),
+    onChange: (cb) => on('history:changed', cb),
+  },
   resin: {
     save: (req) => ipcRenderer.invoke('resin:save', req),
     reveal: (path) => ipcRenderer.send('resin:reveal', path),
