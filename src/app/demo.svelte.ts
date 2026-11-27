@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { exportModel } from '../engine/exporters/exportModel'
-import { openModelFile, ws } from '../features/workspace/store.svelte'
+import { checkNow, openModelFile, repairActive, setXForm, ws } from '../features/workspace/store.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
 /** Builds a small printable sample (a torus knot, ~70 mm) as a real binary STL and opens it. */
@@ -17,9 +17,59 @@ const until = async (ok: () => boolean, ms = 60_000) => {
   return ok()
 }
 
+/** A torus knot with holes punched in it, some faces flipped, floating 5 mm above the plate. */
+async function openBrokenSample() {
+  const g = new THREE.TorusKnotGeometry(22, 7, 220, 28, 2, 3).toNonIndexed()
+  const src = g.getAttribute('position').array as Float32Array
+  const out: number[] = []
+  const tris = src.length / 9
+  for (let t = 0; t < tris; t++) {
+    if (t % 1500 < 6) continue // holes
+    const v = Array.from(src.subarray(t * 9, t * 9 + 9))
+    if (t % 997 === 3) v.splice(3, 6, ...v.slice(6, 9), ...v.slice(3, 6)) // flipped face
+    out.push(...v)
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(out, 3))
+  const mesh = new THREE.Mesh(geo)
+  const data = exportModel(mesh, 'stl')
+  geo.dispose()
+  g.dispose()
+  await openModelFile({ name: 'broken-knot.stl', format: 'stl', size: data.byteLength, data })
+}
+
+const issueList = () => ws.report?.issues.map((i) => i.code).join(',') ?? 'none'
+
 /** Dev hooks used by the `--demo` screenshot runs. */
 export function installDemo() {
   window.__demo = async () => {
+    const repairDemo = (window as unknown as { __demoRepair?: string }).__demoRepair
+    if (repairDemo) {
+      await openBrokenSample()
+      ws.layout = 'workspace'
+      ws.sidebarTab = 'model'
+      await until(() => !!ws.report && !ws.checking)
+      // Lift it off the plate too, so the plate fix shows.
+      setXForm('pz', (ws.xf?.pz ?? 0) + 5)
+      await checkNow()
+      const before = ws.report!
+      console.log(`repair before: verdict=${before.verdict} issues=${issueList()} open=${before.stats.openEdges} flipped=${before.stats.flippedEdges}`)
+      if (repairDemo === 'after') {
+        const btn = [...document.querySelectorAll<HTMLButtonElement>('.sidebar button')].find((b) => b.textContent?.includes('Fix automatically'))
+        if (!btn) throw new Error('no Fix automatically button')
+        btn.click()
+        await until(() => !ws.repairing)
+        await new Promise((r) => setTimeout(r, 200))
+        await checkNow()
+        const r = ws.report!
+        console.log(`repair after: verdict=${r.verdict} issues=${issueList()} watertight=${r.stats.watertight} volume=${r.stats.volumeCm3?.toFixed(2)} note=${ws.fixNote}`)
+      } else if (repairDemo === 'direct') {
+        await repairActive()
+        await checkNow()
+        console.log(`repair direct: ${issueList()} note=${ws.fixNote}`)
+      }
+      return
+    }
     await openSample()
     ws.layout = 'split'
     const sliceDemo = new URLSearchParams(location.search).get('demo') ?? (window as unknown as { __demoSlice?: string }).__demoSlice

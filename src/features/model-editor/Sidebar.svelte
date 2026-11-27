@@ -5,12 +5,18 @@
   import type { SlicersState } from '../../types/ipc'
   import NumField from '../../components/NumField.svelte'
   import SlicePanel from '../slicing/SlicePanel.svelte'
+  import { setOverride, sl } from '../slicing/store.svelte'
+  import type { Issue } from '../../engine/geometry/printCheck'
   import { fmtBytes, fmtInt, fmtNum, mmToIn } from '../../app/format'
   import {
     activeModel,
     BED,
     centerOnBed,
     checkNow,
+    convertUnits,
+    fitToBed,
+    repairActive,
+    undoRepair,
     saveToLibrary,
     sendToSlicer,
     dropToBed,
@@ -43,6 +49,36 @@
     slicerId = slicers.defaultId
   }
 
+  /** Problems inside the mesh itself, which "Repair mesh" fixes. */
+  const MESH_CODES = new Set(['file', 'nan', 'degenerate', 'holes', 'nonmanifold', 'flipped', 'inverted'])
+  const firstMeshIssue = $derived(report?.issues.find((i) => MESH_CODES.has(i.code))?.code ?? null)
+  const supportsOn = $derived(sl.settings.overrides.supports === 'normal' || sl.settings.overrides.supports === 'tree')
+  const canFixAll = $derived(!!report?.issues.some((i) => MESH_CODES.has(i.code) || ['bed', 'below', 'above'].includes(i.code)))
+
+  /** Repairs the mesh if needed, then fits the plate and sits flat on it. */
+  async function fixAll() {
+    if (!report) return
+    const has = (c: string) => report!.issues.some((i) => i.code === c)
+    const notes: string[] = []
+    if (report.issues.some((i) => MESH_CODES.has(i.code))) {
+      await repairActive()
+      if (ws.fixNote) notes.push(ws.fixNote)
+    }
+    if (has('bed')) {
+      fitToBed()
+      notes.push('Scaled to fit the plate.')
+    } else if (has('below') || has('above')) {
+      dropToBed()
+      notes.push('Dropped to the plate.')
+    }
+    ws.fixNote = notes.join(' ') || null
+  }
+
+  function supportsFor(_i: Issue) {
+    setOverride('supports', 'tree')
+    ws.fixNote = 'Tree supports turned on for slicing (Slice tab → Adjust).'
+  }
+
   const verdictText = { ready: 'Ready to print', attention: 'Needs attention', fail: "Won't print as-is" } as const
 </script>
 
@@ -72,6 +108,18 @@
               <span>{verdictText[report.verdict]}</span>
               {#if ws.checking}<span class="spinner"></span>{/if}
             </div>
+            {#if canFixAll}
+              <button class="primary wide fixall" disabled={ws.repairing} onclick={fixAll}>
+                {#if ws.repairing}<span class="spinner"></span>Repairing…{:else}<Icon name="wrench" size={14} />Fix automatically{/if}
+              </button>
+            {/if}
+            {#if ws.fixNote}
+              <div class="fixnote">
+                <Icon name="check" size={13} />
+                <span>{ws.fixNote}</span>
+                {#if ws.canUndoRepair}<button class="link" onclick={undoRepair}>Undo repair</button>{/if}
+              </div>
+            {/if}
             {#if report.issues.length === 0}
               <p class="hint">Watertight, fits the {BED.x} × {BED.y} × {BED.z} mm plate, sits flat, no problem overhangs.</p>
             {:else}
@@ -82,6 +130,25 @@
                     <div>
                       <div class="it">{i.title}</div>
                       <div class="id">{i.detail}</div>
+                      <div class="fixes">
+                        {#if i.code === firstMeshIssue}
+                          <button class="ghost sm" disabled={ws.repairing} onclick={repairActive}><Icon name="wrench" size={12} />Repair mesh</button>
+                        {:else if i.code === 'below' || i.code === 'above'}
+                          <button class="ghost sm" onclick={dropToBed}><Icon name="floor" size={12} />Drop to plate</button>
+                        {:else if i.code === 'bed'}
+                          <button class="ghost sm" onclick={fitToBed}><Icon name="fit" size={12} />Scale to fit</button>
+                        {:else if i.code === 'tiny'}
+                          <button class="ghost sm" title="Model was made in centimetres" onclick={() => convertUnits(10)}>cm → mm</button>
+                          <button class="ghost sm" title="Model was made in inches" onclick={() => convertUnits(25.4)}>in → mm</button>
+                          <button class="ghost sm" title="Model was made in metres" onclick={() => convertUnits(1000)}>m → mm</button>
+                        {:else if i.code === 'floating' || i.code === 'overhang'}
+                          {#if supportsOn}
+                            <span class="done"><Icon name="check" size={12} />Supports on for slicing</span>
+                          {:else}
+                            <button class="ghost sm" onclick={() => supportsFor(i)}><Icon name="layers" size={12} />Turn on supports</button>
+                          {/if}
+                        {/if}
+                      </div>
                     </div>
                   </li>
                 {/each}
@@ -524,6 +591,62 @@
   .id {
     font-size: 12px;
     color: var(--muted);
+  }
+  .fixes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .fixes:empty {
+    display: none;
+  }
+  .ghost.sm {
+    height: 24px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+  .done {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--ok);
+  }
+  .fixall {
+    margin-top: 10px;
+  }
+  .fixnote {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: var(--r-md);
+    border: 1px solid rgba(62, 224, 143, 0.4);
+    color: var(--ok);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .fixnote :global(svg) {
+    flex: none;
+    margin-top: 2px;
+  }
+  .fixnote span {
+    flex: 1;
+    color: var(--text);
+  }
+  .fixnote .link {
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+  }
+  .fixnote .link:hover {
+    text-decoration: underline;
   }
   .checkstats {
     margin-top: 12px;

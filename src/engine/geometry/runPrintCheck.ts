@@ -20,7 +20,7 @@ function getWorker() {
 }
 
 /** Flattens every mesh into world-space triangle positions, as the printer would see it. */
-function worldTriangles(root: THREE.Object3D) {
+export function worldTriangles(root: THREE.Object3D) {
   root.updateMatrixWorld(true)
   const chunks: Float32Array[] = []
   let total = 0

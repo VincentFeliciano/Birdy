@@ -26,6 +26,9 @@ The installer is not code-signed yet, so Windows SmartScreen may ask you to conf
 - Move / rotate / scale gizmo and exact numeric fields, size in mm, uniform lock, mirror, drop to plate, center, reset
 - Dimensions in mm and inches, triangle and object counts
 - **Print check**: corrupt data, truncated files, holes (not watertight), non-manifold edges, flipped or inside-out faces, zero-area triangles, fit on a 256 mm plate, below or floating above the plate, parts in mid-air, overhangs that need supports, and unit mistakes. Verdict: *Ready to print*, *Needs attention*, or *Won't print as-is*. Runs in a background worker.
+- **Fix it**: *Fix automatically* repairs the mesh (fills holes, fixes flipped and inside-out faces, welds cracks,
+  removes corrupt, zero-area and duplicate triangles), scales it to fit the plate and sets it down flat. Each problem
+  also has its own fix: Repair mesh, Drop to plate, Scale to fit, cm/inch/metre to mm, Turn on supports. Repairs can be undone
 - Save As STL or OBJ (originals are never modified; saved files are read back and verified)
 - **Open in slicer**: auto-detects OrcaSlicer, Bambu Studio, PrusaSlicer and UltiMaker Cura, or you can pick any slicer executable
 
@@ -52,7 +55,7 @@ The installer is not code-signed yet, so Windows SmartScreen may ask you to conf
 npm install
 npm run dev        # run with hot reload
 npm run check      # type-check renderer and main process
-npm test           # print-check, slicing and USB streaming tests
+npm test           # print-check, repair, slicing, USB and user-agent tests
 npm run dist       # build the Windows installer into release/
 ```
 

@@ -50,6 +50,7 @@
     stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
     usb: '<path d="M12 3v14M9 6l3-3 3 3M7 10v2l5 3 5-3v-2"/><circle cx="12" cy="19" r="2"/>',
     import: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 15v4h14v-4"/>',
+    wrench: '<path d="M14.5 6.5a4 4 0 0 0 5 5l-8.8 8.8a2.1 2.1 0 0 1-3-3l8.8-8.8z" transform="translate(-1 -1)"/><path d="M15.2 4.6a4.5 4.5 0 0 1 4.2 4.2l-2.6.4-2-2z"/>',
   } as const
 
   export type IconName = keyof typeof ICONS

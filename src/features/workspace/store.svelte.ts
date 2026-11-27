@@ -5,7 +5,10 @@ import type { Projection, Tool, ViewPreset, Viewer } from '../../engine/three/vi
 import { parseModel } from '../../engine/loaders/loadModel'
 import { exportModel } from '../../engine/exporters/exportModel'
 import { countMeshes, countTriangles, measure, type ModelStats } from '../../engine/geometry/stats'
-import { runPrintCheck } from '../../engine/geometry/runPrintCheck'
+import { runPrintCheck, worldTriangles } from '../../engine/geometry/runPrintCheck'
+import { runRepair } from '../../engine/geometry/runRepair'
+import { describeRepair } from '../../engine/geometry/repair'
+import { defaultMaterial } from '../../engine/loaders/loadModel'
 import type { BedSize, PrintReport } from '../../engine/geometry/printCheck'
 
 function storedBed(): BedSize {
@@ -71,6 +74,11 @@ export const ws = $state({
   saving: false,
   report: null as PrintReport | null,
   checking: false,
+  repairing: false,
+  /** What the last repair or quick fix did, for the active model. */
+  fixNote: null as string | null,
+  /** The active model has a repair that can be undone. */
+  canUndoRepair: false,
 })
 
 export function remember() {
@@ -88,6 +96,9 @@ interface Doc {
   triangles: number
   meshes: number
   initialZ: number
+  /** The mesh as loaded, kept while a repair is applied so it can be undone. */
+  beforeRepair?: { children: THREE.Object3D[]; warnings: string[]; triangles: number; meshes: number }
+  fixNote: string | null
 }
 const docs = new Map<string, Doc>()
 let viewer: Viewer | null = null
@@ -227,6 +238,7 @@ export async function openModelFile(file: ModelFile) {
       original: file,
       warnings,
       report: null,
+      fixNote: null,
       triangles: countTriangles(obj),
       meshes: countMeshes(obj),
     })
@@ -253,6 +265,8 @@ export function activate(id: string, frame = false) {
   if (ws.activeId !== id) modelListener?.('switch')
   ws.activeId = id
   ws.report = doc.report
+  ws.fixNote = doc.fixNote
+  ws.canUndoRepair = !!doc.beforeRepair
   if (!doc.report) scheduleCheck(0)
   viewer?.setModel(doc.wrapper)
   viewer?.setWireframe(ws.wireframe)
@@ -268,12 +282,8 @@ export function closeModel(id: string) {
   if (ws.activeId === id) modelListener?.('switch')
   ws.models.splice(idx, 1)
   docs.delete(id)
-  doc.wrapper.traverse((o) => {
-    const mesh = o as THREE.Mesh
-    if (!mesh.isMesh) return
-    mesh.geometry.dispose()
-    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) m.dispose()
-  })
+  disposeTree(doc.wrapper)
+  for (const c of doc.beforeRepair?.children ?? []) disposeTree(c)
   if (ws.activeId === id) {
     const next = ws.models[Math.min(idx, ws.models.length - 1)]
     if (next) activate(next.id)
@@ -387,6 +397,128 @@ export function dropToBed() {
     const box = new THREE.Box3().setFromObject(w, true)
     w.position.z -= box.min.z
   })
+}
+
+/** Scales the model down (or up) to fit the plate with a small margin, then centres and drops it. */
+export function fitToBed() {
+  apply((w) => {
+    const size = new THREE.Box3().setFromObject(w, true).getSize(new THREE.Vector3())
+    const f = Math.min(BED.x / size.x, BED.y / size.y, BED.z / size.z) * 0.95
+    if (Number.isFinite(f) && f > 0) w.scale.multiplyScalar(f)
+    placeOnBed(w)
+  })
+  setFixNote('Scaled to fit the plate.')
+}
+
+/** Rescales a model exported in other units (cm, inches, metres) to millimetres. */
+export function convertUnits(factor: number) {
+  apply((w) => {
+    w.scale.multiplyScalar(factor)
+    placeOnBed(w)
+  })
+  setFixNote(`Scaled by ${factor}×.`)
+}
+
+function placeOnBed(w: THREE.Group) {
+  w.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(w, true)
+  const c = box.getCenter(new THREE.Vector3())
+  w.position.x -= c.x
+  w.position.y -= c.y
+  w.position.z -= box.min.z
+}
+
+function setFixNote(text: string | null) {
+  const doc = activeDoc()
+  if (doc) doc.fixNote = text
+  ws.fixNote = text
+}
+
+function disposeTree(root: THREE.Object3D) {
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh
+    if (!mesh.isMesh) return
+    mesh.geometry.dispose()
+    for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) m.dispose()
+  })
+}
+
+/**
+ * Repairs the mesh (holes, flipped and inside-out faces, cracks, junk triangles) in a worker and
+ * swaps the result in. The file on disk is never touched, and the repair can be undone.
+ */
+export async function repairActive() {
+  const id = ws.activeId
+  const doc = activeDoc()
+  if (!doc || !id || ws.repairing) return
+  ws.repairing = true
+  ws.error = null
+  try {
+    // Repair in world space (so a mirrored model's faces end up facing out), then map back.
+    const { positions } = worldTriangles(doc.wrapper)
+    const { positions: fixed, summary } = await runRepair(positions)
+    if (!docs.has(id)) return
+    doc.wrapper.updateMatrixWorld(true)
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(fixed, 3))
+    geo.applyMatrix4(doc.wrapper.matrixWorld.clone().invert())
+    geo.computeVertexNormals()
+    const mesh = new THREE.Mesh(geo, defaultMaterial())
+    mesh.name = 'repaired'
+
+    const old = [...doc.wrapper.children]
+    if (doc.beforeRepair) for (const c of old) disposeTree(c)
+    else doc.beforeRepair = { children: old, warnings: doc.warnings, triangles: doc.triangles, meshes: doc.meshes }
+    for (const c of old) doc.wrapper.remove(c)
+    doc.wrapper.add(mesh)
+    // The repaired mesh stands on its own; warnings about the file it came from no longer apply.
+    doc.warnings = []
+    doc.triangles = summary.trianglesAfter
+    doc.meshes = 1
+    doc.fixNote = describeRepair(summary)
+    if (ws.activeId === id) {
+      ws.fixNote = doc.fixNote
+      ws.canUndoRepair = true
+    }
+    afterGeometryChange(doc)
+  } catch (err) {
+    ws.error = `Repair failed: ${(err as Error).message}`
+  } finally {
+    ws.repairing = false
+  }
+}
+
+/** Puts back the mesh as it was loaded. */
+export function undoRepair() {
+  const doc = activeDoc()
+  const before = doc?.beforeRepair
+  if (!doc || !before) return
+  for (const c of [...doc.wrapper.children]) {
+    doc.wrapper.remove(c)
+    disposeTree(c)
+  }
+  for (const c of before.children) doc.wrapper.add(c)
+  doc.warnings = before.warnings
+  doc.triangles = before.triangles
+  doc.meshes = before.meshes
+  doc.beforeRepair = undefined
+  doc.fixNote = null
+  ws.fixNote = null
+  ws.canUndoRepair = false
+  afterGeometryChange(doc)
+}
+
+function afterGeometryChange(doc: Doc) {
+  doc.wrapper.updateMatrixWorld(true)
+  markModified()
+  modelListener?.('edit')
+  if (docs.get(ws.activeId ?? '') === doc) {
+    viewer?.setModel(doc.wrapper)
+    viewer?.setWireframe(ws.wireframe)
+    viewer?.changed()
+    refresh()
+    scheduleCheck(0)
+  }
 }
 
 export function centerOnBed() {

@@ -271,6 +271,8 @@ function maybeScreenshot() {
       const printersPort = process.argv.find((a) => a.startsWith('--demo-printers='))?.slice('--demo-printers='.length)
       if (printersPort) await win.webContents.executeJavaScript(`window.__demoPrinters = ${JSON.stringify(printersPort)}`)
       if (process.argv.includes('--demo-install')) await win.webContents.executeJavaScript('window.__demoInstall = true')
+      const repairDemo = process.argv.find((a) => a.startsWith('--demo-repair='))?.slice('--demo-repair='.length)
+      if (repairDemo) await win.webContents.executeJavaScript(`window.__demoRepair = ${JSON.stringify(repairDemo)}`)
       try {
         await win.webContents.executeJavaScript('window.__demo ? window.__demo().then(() => "demo ok") : "no demo hook"').then((r) => console.log(`[demo] ${r}`))
       } catch (err) {
