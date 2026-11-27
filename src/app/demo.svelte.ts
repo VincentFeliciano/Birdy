@@ -8,7 +8,7 @@ import { isFdmKind } from '../types/slicing'
 import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelte'
 import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
-import { addShape, setTool, scaleBy, moveBy, rotateBy, undo, redo, setUniform, setDimension, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
+import { addShape, setTool, setSizeUnit, scaleBy, moveBy, rotateBy, undo, redo, setUniform, setDimension, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseGcodeFolder, chooseMachine, folderLabel, importFrom, installEngine, loadCatalog, openPrinterEditor, saveGcode, setPreset, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 import { BED } from '../features/workspace/store.svelte'
@@ -356,6 +356,43 @@ export function installDemo() {
       await until(() => !!ws.report && !ws.checking)
       const say = (what: string) => console.log(`edit ${what}: parts=${ws.parts.length} tris=${ws.parts.map((p) => p.triangles).join('+')} verdict=${ws.report?.verdict} issues=${ws.report?.issues.map((i) => i.code).join(',')} note=${ws.fixNote} error=${ws.error}`)
       say('start')
+      if (editDemo === 'units-delete') {
+        const tick = (ms = 150) => new Promise((r) => setTimeout(r, ms))
+        selectPart(0)
+        // Scale panel: switch to inches and type 2 into X, as a user would.
+        setTool('select')
+        setTool('scale')
+        await tick()
+        document.querySelector<HTMLButtonElement>('.opts .unit:nth-child(3)')!.click()
+        await tick()
+        const x = document.querySelector<HTMLInputElement>('.opts input[aria-label="x size in in"]')!
+        x.value = '2'
+        x.dispatchEvent(new Event('change', { bubbles: true }))
+        await tick()
+        console.log(`units: unit=${ws.sizeUnit} x=${ws.stats?.size.x.toFixed(3)}mm (${(ws.stats!.size.x / 25.4).toFixed(3)} in) shown=${x.value} sidebar=${document.querySelector('.sidebar .units .unit.on')?.textContent}`)
+        // Transform tab: 5 cm on Y.
+        document.querySelector<HTMLButtonElement>('.sidebar .units .unit:nth-child(2)')!.click()
+        await tick()
+        console.log(`units: unit=${ws.sizeUnit} scale-panel=${document.querySelector('.opts .unit.on')?.textContent}`)
+        // Delete key on the selected (second) model, then Ctrl+Z, then Delete on the last one.
+        selectPart(1)
+        document.querySelector<HTMLElement>('.canvas')!.focus()
+        const press = (key: string, ctrl = false) => document.querySelector<HTMLElement>('.canvas')!.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey: ctrl, bubbles: true }))
+        press('Delete')
+        await tick()
+        console.log(`delete: parts=${ws.parts.length} notice=${ws.notice?.text}`)
+        press('z', true)
+        await tick()
+        console.log(`undo: parts=${ws.parts.length}`)
+        selectPart(1)
+        document.querySelector<HTMLButtonElement>('.toolrail button[aria-label="Remove selected model"]')!.click()
+        await tick()
+        press('Delete')
+        await tick()
+        console.log(`last: parts=${ws.parts.length} notice=${ws.notice?.text} trashDisabled=${document.querySelector<HTMLButtonElement>('.toolrail button[aria-label="Remove selected model"]')!.disabled}`)
+        setSizeUnit('mm')
+        return
+      }
       const t0 = performance.now()
       if (editDemo === 'merge') await combineParts('union')
       if (editDemo === 'subtract') { selectPart(1); await combineParts('difference') }

@@ -16,6 +16,7 @@
     closeModel,
     fit,
     openFromDialog,
+    deleteSelectedPart,
     redo,
     undo,
     remember,
@@ -75,9 +76,17 @@
 
   // Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z) anywhere in the workspace, except while typing in a field.
   function onWindowKey(e: KeyboardEvent) {
-    if (!(e.ctrlKey || e.metaKey) || e.altKey || ws.layout === 'browse' || ws.layout === 'library') return
-    const t = e.target as HTMLElement | null
+    if (e.altKey || ws.layout === 'browse' || ws.layout === 'library') return
+    const t = e.target instanceof Element ? e.target : null
     if (t && (t.closest('input, textarea, select, [contenteditable="true"]') || t.closest('.dlg'))) return
+    // Delete removes the selected model from the plate.
+    if (e.key === 'Delete' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      if (!ws.activeId) return
+      deleteSelectedPart()
+      e.preventDefault()
+      return
+    }
+    if (!(e.ctrlKey || e.metaKey)) return
     const k = e.key.toLowerCase()
     if (k === 'z' && !e.shiftKey) undo()
     else if (k === 'y' || (k === 'z' && e.shiftKey)) redo()
@@ -217,6 +226,15 @@
         </button>
         <button class="icon-btn" disabled={!ws.redoLabel} title={ws.redoLabel ? `Redo ${ws.redoLabel.toLowerCase()} (Ctrl+Y)` : 'Nothing to redo'} aria-label="Redo" onclick={redo}>
           <Icon name="redo" size={16} />
+        </button>
+        <span class="sep"></span>
+        <button
+          class="icon-btn"
+          disabled={ws.parts.length < 2}
+          title={ws.parts.length < 2 ? 'Add another model to remove one (close the tab to remove the last)' : `Remove ${ws.parts[ws.selPart]?.name ?? 'the selected model'} from the plate (Delete)`}
+          aria-label="Remove selected model"
+          onclick={deleteSelectedPart}>
+          <Icon name="trash" size={16} />
         </button>
       </div>
       <ToolOptions />

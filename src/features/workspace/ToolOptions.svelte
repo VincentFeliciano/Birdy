@@ -12,7 +12,12 @@
     rotateBy,
     scaleBy,
     scaleTo,
+    mmToUnit,
     setDimension,
+    setSizeIn,
+    setSizeUnit,
+    SIZE_UNITS,
+    type SizeUnit,
     setUniform,
     setXForm,
     settleModel,
@@ -29,6 +34,7 @@
   let turnDeg = $state(45)
   let nudge = $state(10)
 
+
   const val = (e: Event) => Number((e.currentTarget as HTMLInputElement).value)
   const AXES = ['x', 'y', 'z'] as const
 </script>
@@ -42,12 +48,23 @@
           <Icon name={ws.uniform ? 'lock' : 'unlock'} size={12} />{ws.uniform ? 'Even' : 'Free'}
         </button>
       </div>
+      <div class="units" role="radiogroup" aria-label="Size units">
+        {#each Object.keys(SIZE_UNITS) as u}
+          <button class="unit" class:on={ws.sizeUnit === u} role="radio" aria-checked={ws.sizeUnit === u} onclick={() => setSizeUnit(u as SizeUnit)}>{u}</button>
+        {/each}
+      </div>
       <div class="rows">
         {#each AXES as a}
           <label class="row">
             <i class="ax-{a}">{a.toUpperCase()}</i>
-            <input type="number" min="0.01" step="1" value={fmtNum(size[a])} onchange={(e) => setDimension(a, val(e), ws.uniform)} aria-label="{a} size in mm" />
-            <span class="u">mm</span>
+            <input
+              type="number"
+              min="0.001"
+              step={ws.sizeUnit === 'in' ? 0.1 : ws.sizeUnit === 'cm' ? 0.5 : 1}
+              value={mmToUnit(size[a])}
+              onchange={(e) => setSizeIn(a, val(e), ws.uniform)}
+              aria-label="{a} size in {ws.sizeUnit}" />
+            <span class="u">{ws.sizeUnit}</span>
           </label>
         {/each}
         <label class="row">
@@ -177,6 +194,30 @@
   .lock.on {
     color: var(--accent);
     border-color: var(--neon-line);
+  }
+  .units {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    align-self: flex-start;
+  }
+  .unit {
+    height: 20px;
+    min-width: 32px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .unit.on {
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
   }
   .rows {
     display: flex;

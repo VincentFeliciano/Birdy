@@ -60,6 +60,31 @@ export interface XForm {
 
 const stored = (k: string, fallback: string) => localStorage.getItem(`birdy.${k}`) ?? fallback
 
+/** Units sizes can be typed in, as mm per unit. */
+export const SIZE_UNITS = { mm: 1, cm: 10, in: 25.4 } as const
+export type SizeUnit = keyof typeof SIZE_UNITS
+
+function loadSizeUnit(): SizeUnit {
+  const u = typeof localStorage === 'undefined' ? null : localStorage.getItem('birdy.scaleUnit')
+  return u === 'cm' || u === 'in' ? u : 'mm'
+}
+
+export function setSizeUnit(u: SizeUnit) {
+  ws.sizeUnit = u
+  localStorage.setItem('birdy.scaleUnit', u)
+}
+
+/** A size in mm, in the chosen unit, rounded for display (0.01 mm, 0.01 cm, 0.001 in). */
+export function mmToUnit(mm: number, u: SizeUnit = ws.sizeUnit): number {
+  const d = u === 'in' ? 1000 : 100
+  return Math.round((mm / SIZE_UNITS[u]) * d) / d
+}
+
+/** Sets a real-life size typed in the chosen unit (2 in → 50.8 mm). */
+export function setSizeIn(axis: 'x' | 'y' | 'z', value: number, uniform: boolean, u: SizeUnit = ws.sizeUnit) {
+  setDimension(axis, value * SIZE_UNITS[u], uniform)
+}
+
 export const ws = $state({
   layout: 'browse' as Layout,
   ratio: Math.min(0.8, Math.max(0.2, Number(stored('ratio', '0.45')) || 0.45)),
@@ -68,6 +93,8 @@ export const ws = $state({
   tool: 'move' as Tool,
   /** Whether the active tool's options panel (beside the tool rail) is open. */
   toolPanel: true,
+  /** Unit for typing real-life sizes (the model itself is always in mm). */
+  sizeUnit: loadSizeUnit(),
   projection: 'perspective' as Projection,
   wireframe: false,
   bbox: true,
@@ -1566,6 +1593,22 @@ export function removePart() {
   doc.sel = partsOf(doc)[Math.max(0, i - 1)]!
   afterPlateChange(doc)
   if (ws.isolate) viewer?.setIsolated(doc.sel)
+}
+
+/**
+ * Delete key / trash button: removes the selected model from the plate (Undo brings it back).
+ * The last model stays; closing its tab removes it.
+ */
+export function deleteSelectedPart() {
+  const doc = activeDoc()
+  if (!doc) return
+  if (partsOf(doc).length < 2) {
+    ws.notice = { text: 'This is the only model on the plate. Close its tab to remove it.' }
+    return
+  }
+  const name = ws.parts[ws.selPart]?.name ?? 'the model'
+  removePart()
+  ws.notice = { text: `Removed ${name} from the plate. Ctrl+Z brings it back.` }
 }
 
 /** Puts a new part to the right of everything on the plate, standing on it. */

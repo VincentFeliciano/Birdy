@@ -270,6 +270,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
       ['E', 'Rotate'],
       ['R', 'Scale'],
       ['F', 'Fit the model in view'],
+      ['Delete', 'Remove the selected model from the plate'],
       ['Left drag', 'Orbit'],
       ['Right drag', 'Pan'],
       ['Wheel', 'Zoom'],

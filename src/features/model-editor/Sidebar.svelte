@@ -32,7 +32,12 @@
     reopenSaved,
     resetTransform,
     saveAs,
+    mmToUnit,
     setDimension,
+    setSizeIn,
+    setSizeUnit,
+    SIZE_UNITS,
+    type SizeUnit,
     setXForm,
     setUniform,
     ws,
@@ -310,10 +315,23 @@
             <NumField axis="y" label="Scale" digits={1} step={5} value={xf.sy} onCommit={(v) => setXForm('sy', v, uniform)} />
             <NumField axis="z" label="Scale" digits={1} step={5} value={xf.sz} onCommit={(v) => setXForm('sz', v, uniform)} />
           </div>
-          <h3 class="hud-label sub">Size <span class="dim">mm</span></h3>
+          <h3 class="hud-label sub row-head">
+            Size <span class="dim">real-life, in {ws.sizeUnit}</span>
+            <span class="units" role="radiogroup" aria-label="Size units">
+              {#each Object.keys(SIZE_UNITS) as u}
+                <button class="unit" class:on={ws.sizeUnit === u} role="radio" aria-checked={ws.sizeUnit === u} onclick={() => setSizeUnit(u as SizeUnit)}>{u}</button>
+              {/each}
+            </span>
+          </h3>
           <div class="row3">
             {#each axes as a}
-              <NumField axis={a} label="Size" value={s.size[a]} onCommit={(v) => setDimension(a, v, uniform)} />
+              <NumField
+                axis={a}
+                label="Size"
+                digits={ws.sizeUnit === 'in' ? 3 : 2}
+                step={ws.sizeUnit === 'in' ? 0.1 : ws.sizeUnit === 'cm' ? 0.5 : 1}
+                value={mmToUnit(s.size[a])}
+                onCommit={(v) => setSizeIn(a, v, uniform)} />
             {/each}
           </div>
         </section>
@@ -760,5 +778,31 @@
     font-size: 11px;
     color: var(--faint);
     text-align: center;
+  }
+  .units {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: auto;
+    padding: 2px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .unit {
+    height: 18px;
+    min-width: 28px;
+    padding: 0 5px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .unit.on {
+    color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
   }
 </style>
