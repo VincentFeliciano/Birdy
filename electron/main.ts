@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isSearchType, type NewBookmark, type NewLibraryModel, type SaveRequest, type SlicerHandoff } from '../src/types/ipc'
 import { BrowserManager } from './browser-manager'
-import { installSignInHeaders } from './user-agent'
+import { installSignInHeaders, plainChromeUserAgent } from './user-agent'
 import { ModelsManager } from './models'
 import { checkForUpdates, downloadUpdate, getUpdateState, installUpdate, setupUpdater } from './updater'
 import { Library } from './library'
@@ -20,6 +20,9 @@ import { listPrinters, removePrinter, savePrinter, sendToPrinter, testPrinter, p
 import type { ImportSource, PrinterInput, SendRequest, SerialPortChoice, SliceRequest } from '../src/types/slicing'
 
 app.setName('Birdy')
+// Shared and service workers take their user agent from here, not from the session. Left alone they
+// would announce "Birdy/x Electron/x" while the page says plain Chrome, a mismatch bot checks catch.
+app.userAgentFallback = plainChromeUserAgent(app.userAgentFallback)
 // Screenshot mode must keep painting even when other windows cover this one.
 if (process.argv.some((x) => x.startsWith('--screenshot='))) {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
@@ -81,12 +84,7 @@ function createWindow() {
   const browserSession = session.fromPartition('persist:browser')
 
   // Present as a normal Chromium browser so sites don't block an unknown client.
-  browserSession.setUserAgent(
-    browserSession
-      .getUserAgent()
-      .replace(/\s?Electron\/\S+/, '')
-      .replace(new RegExp(`\\s?(${app.getName()}|birdy)\\/\\S+`, 'i'), ''),
-  )
+  browserSession.setUserAgent(plainChromeUserAgent(browserSession.getUserAgent()))
   installSignInHeaders(browserSession)
   // Websites get no device permissions in the MVP except fullscreen and clipboard writes.
   const allowed = (permission: string) => permission === 'fullscreen' || permission === 'clipboard-sanitized-write'
@@ -411,7 +409,7 @@ function maybeScreenshot() {
       if (probe && probeTab) {
         for (const u of probe.split(',')) {
           await probeTab.loadURL(u).catch(() => {})
-          const seen = await probeTab.executeJavaScript(`(async () => JSON.stringify({ host: location.host, ua: navigator.userAgent, brands: navigator.userAgentData?.brands?.map((b) => b.brand + '/' + b.version) ?? null, full: await navigator.userAgentData?.getHighEntropyValues?.(['fullVersionList', 'platformVersion']).catch(() => null), webdriver: navigator.webdriver, chrome: typeof window.chrome === 'object' ? Object.keys(window.chrome) : null, plugins: navigator.plugins.length, pdf: navigator.pdfViewerEnabled, langs: navigator.languages, notif: typeof Notification === 'undefined' ? null : Notification.permission, perm: await navigator.permissions.query({ name: 'notifications' }).then((r) => r.state).catch((e) => String(e)), outer: [outerWidth, outerHeight], inner: [innerWidth, innerHeight], focus: document.hasFocus(), vis: document.visibilityState, gl: (() => { const g = document.createElement('canvas').getContext('webgl'); const d = g?.getExtension('WEBGL_debug_renderer_info'); return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : null })() }))()`)
+          const seen = await probeTab.executeJavaScript(`(async () => JSON.stringify({ host: location.host, ua: navigator.userAgent, brands: navigator.userAgentData?.brands?.map((b) => b.brand + '/' + b.version) ?? null, full: await navigator.userAgentData?.getHighEntropyValues?.(['fullVersionList', 'platformVersion']).catch(() => null), worker: await new Promise((r) => { const w = new Worker(URL.createObjectURL(new Blob(['postMessage([navigator.userAgent, JSON.stringify(navigator.userAgentData?.brands), navigator.languages.join()])'], { type: 'text/javascript' }))); w.onmessage = (e) => r(e.data); w.onerror = (e) => r('error ' + e.message); setTimeout(() => r('timeout'), 3000) }), shared: await new Promise((r) => { const w = new SharedWorker(URL.createObjectURL(new Blob(['onconnect = (e) => e.ports[0].postMessage(navigator.userAgent)'], { type: 'text/javascript' }))); w.port.onmessage = (e) => r(e.data); setTimeout(() => r('timeout'), 3000) }), sw: await navigator.serviceWorker?.register('/sw.js').then(() => navigator.serviceWorker.ready).then((reg) => new Promise((r) => { navigator.serviceWorker.onmessage = (e) => r(e.data); reg.active.postMessage('ua'); setTimeout(() => r('timeout'), 3000) })).catch((e) => String(e)), webdriver: navigator.webdriver, chrome: typeof window.chrome === 'object' ? Object.keys(window.chrome) : null, plugins: navigator.plugins.length, pdf: navigator.pdfViewerEnabled, langs: navigator.languages, notif: typeof Notification === 'undefined' ? null : Notification.permission, perm: await navigator.permissions.query({ name: 'notifications' }).then((r) => r.state).catch((e) => String(e)), outer: [outerWidth, outerHeight], inner: [innerWidth, innerHeight], focus: document.hasFocus(), vis: document.visibilityState, gl: (() => { const g = document.createElement('canvas').getContext('webgl'); const d = g?.getExtension('WEBGL_debug_renderer_info'); return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : null })() }))()`)
           console.log('[probe]', seen)
         }
         await new Promise((r) => setTimeout(r, 5000))

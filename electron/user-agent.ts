@@ -9,7 +9,12 @@ import type { Session, WebContents } from 'electron'
  */
 export const SIGN_IN_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0'
 
-const SIGN_IN_HOSTS = new Set(['accounts.google.com'])
+/** Electron's user agent without the "Electron/x" and "Birdy/x" (app name) tokens: plain Chromium. */
+export function plainChromeUserAgent(ua: string): string {
+  return ua.replace(/\s?(Electron|Birdy|birdy)\/\S+/g, '')
+}
+
+const SIGN_IN_HOSTS =new Set(['accounts.google.com'])
 
 export function isSignInUrl(url: string): boolean {
   try {

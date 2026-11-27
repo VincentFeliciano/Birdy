@@ -49,3 +49,9 @@ assert.deepEqual(out, { Accept: 'text/html', 'User-Agent': SIGN_IN_USER_AGENT })
   assert.deepEqual(log, ['attach', 'detach', 'attach'])
 }
 console.log('user-agent tests passed')
+import { plainChromeUserAgent } from '../electron/user-agent.ts'
+assert.equal(
+  plainChromeUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Birdy/0.4.1 Chrome/156.0.8078.109 Electron/45.5.0 Safari/537.36'),
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.109 Safari/537.36',
+)
+console.log('plain user agent test passed')
