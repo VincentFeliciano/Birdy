@@ -1,5 +1,5 @@
 import type { ModelsEntry, ModelsImport } from '../../types/ipc'
-import { openModelFile } from '../workspace/store.svelte'
+import { addToPlate, openModelFile, ws } from '../workspace/store.svelte'
 import { queueThumbs } from './thumbs'
 
 /** The Models panel: browsing Documents/Birdy/Models. */
@@ -130,19 +130,65 @@ export function up() {
   openFolder(models.cwd.split('/').slice(0, -1).join('/'))
 }
 
-/** Breadcrumb for the current folder. */
+/** True when browsing somewhere on the PC other than the Models folder. */
+export const isElsewhere = (rel = models.cwd) => /^[a-z]:(\/|$)/i.test(rel)
+
+/** Breadcrumb for the current folder (for a folder elsewhere it starts at the drive). */
 export function crumbs() {
   const parts = models.cwd.split('/').filter(Boolean)
   return parts.map((name, i) => ({ name, rel: parts.slice(0, i + 1).join('/') }))
 }
 
-export async function openModel(rel: string) {
+/** Picks any folder on the PC to browse. */
+export async function browseFolder() {
+  const rel = await window.api.models.pickFolder()
+  if (rel) openFolder(rel)
+}
+
+/** Unpacks a ZIP found elsewhere on the PC into the Models folder, then shows it there. */
+export async function openArchive(rel: string) {
+  models.opening = rel
+  models.notice = 'Unpacking…'
+  try {
+    await window.api.models.importArchive(rel)
+  } catch (err) {
+    models.notice = `Couldn't unpack it: ${(err as Error).message}`
+  } finally {
+    models.opening = null
+  }
+}
+
+/** Opens a model and goes straight to the Slice tab. */
+export async function sliceModel(rel: string) {
+  if (await openModel(rel)) {
+    ws.layout = 'workspace'
+    ws.sidebarTab = 'slice'
+  }
+}
+
+/** Adds a model to the plate of the model that's open (opens it if none is). */
+export async function addModelToPlate(rel: string) {
+  if (!ws.activeId) return void (await openModel(rel))
+  models.opening = rel
+  try {
+    await addToPlate(await window.api.models.read(rel))
+    models.notice = 'Added to the plate.'
+  } catch (err) {
+    models.notice = `Couldn't add it: ${(err as Error).message}`
+  } finally {
+    models.opening = null
+  }
+}
+
+export async function openModel(rel: string): Promise<boolean> {
   models.opening = rel
   try {
     const file = await window.api.models.read(rel)
     await openModelFile(file)
+    return true
   } catch (err) {
     models.notice = `Couldn't open it: ${(err as Error).message}`
+    return false
   } finally {
     models.opening = null
   }

@@ -1,11 +1,11 @@
-import { app, shell, type BrowserWindow } from 'electron'
+import { app, dialog, shell, type BrowserWindow } from 'electron'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, watch, type FSWatcher } from 'node:fs'
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, join, relative } from 'node:path'
 import { formatFromName, type ModelFile } from '../src/types/ipc'
 import { MAX_MODEL_BYTES } from './file-system'
-import { importIntoModels, isArchiveName, listModels, searchModels, type FolderEntry, type ImportResult } from './models-import'
+import { absPath, importIntoModels, isAbsRel, isArchiveName, listModels, searchModels, type FolderEntry, type ImportResult } from './models-import'
 
 const MAX_THUMB_BYTES = 400 * 1024
 
@@ -43,8 +43,12 @@ export class ModelsManager {
     }, 400)
   }
 
-  /** Absolute path for a relative one, refusing anything outside the Models folder. */
+  /**
+   * Absolute path for a UI path: inside the Models folder for relative ones (refusing anything that
+   * climbs out), or the folder or file the user browsed to on the PC for absolute ones ("C:/…").
+   */
   private resolve(rel: string) {
+    if (isAbsRel(rel)) return absPath(rel)
     const full = join(this.root, ...rel.split('/').filter(Boolean))
     const r = relative(this.root, full)
     if (r.startsWith('..') || /^[a-z]:/i.test(r)) throw new Error('That path is outside the Models folder.')
@@ -72,6 +76,40 @@ export class ModelsManager {
       }
     }
     return out
+  }
+
+  /** The Models folder, the usual user folders, and every drive that exists. */
+  places(): { name: string; rel: string; kind: 'models' | 'folder' | 'drive' }[] {
+    const out: { name: string; rel: string; kind: 'models' | 'folder' | 'drive' }[] = [{ name: 'Models', rel: '', kind: 'models' }]
+    const toRel = (p: string) => p.replace(/\\/g, '/').replace(/\/$/, '')
+    for (const [name, key] of [['Downloads', 'downloads'], ['Desktop', 'desktop'], ['Documents', 'documents']] as const) {
+      try {
+        const p = app.getPath(key)
+        if (existsSync(p)) out.push({ name, rel: toRel(p), kind: 'folder' })
+      } catch {
+        // Not set up on this PC.
+      }
+    }
+    for (let c = 67; c <= 90; c++) {
+      const d = `${String.fromCharCode(c)}:`
+      if (existsSync(`${d}\\`)) out.push({ name: `${d} drive`, rel: d, kind: 'drive' })
+    }
+    return out
+  }
+
+  async pickFolder(): Promise<string | null> {
+    const r = await dialog.showOpenDialog(this.win, { title: 'Browse a folder for models', properties: ['openDirectory'] })
+    const p = r.canceled ? undefined : r.filePaths[0]
+    return p ? p.replace(/\\/g, '/').replace(/\/$/, '') : null
+  }
+
+  /** Unpacks a ZIP the user picked in the panel into the Models folder. */
+  async importArchive(rel: string): Promise<void> {
+    if (!isAbsRel(rel) || !isArchiveName(rel)) throw new Error('That is not a ZIP file.')
+    const full = this.resolve(rel)
+    if (!(await stat(full)).isFile()) throw new Error('That is not a file.')
+    const r = await this.importDownload(full)
+    if (!r || !r.models) throw new Error('No 3D models were found in that ZIP.')
   }
 
   async read(rel: string): Promise<ModelFile> {

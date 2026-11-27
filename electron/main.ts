@@ -245,6 +245,12 @@ function registerIpc(exportsDir: string) {
     return models.importFolder(downloads.dir)
   })
   on('models:reveal', (rel) => isShortString(rel, 1024) && models?.reveal(rel))
+  handle('models:places', async () => models?.places() ?? [])
+  handle('models:pick-folder', async () => models?.pickFolder() ?? null)
+  handle('models:import-archive', async (rel) => {
+    if (!isShortString(rel, 1024) || !models) throw new Error('Bad path.')
+    return models.importArchive(rel)
+  })
   handle('models:search', async (q) => (isShortString(q, 200) && models ? models.search(q) : []))
   handle('models:lookup', async (rels) =>
     Array.isArray(rels) && models ? models.lookup(rels.filter((r): r is string => isShortString(r, 1024)).slice(0, 500)) : [],
@@ -352,6 +358,8 @@ function maybeScreenshot() {
       if (process.argv.includes('--demo-orient')) await win.webContents.executeJavaScript('window.__demoOrient = true')
       if (process.argv.includes('--demo-settle')) await win.webContents.executeJavaScript('window.__demoSettle = true')
       if (process.argv.includes('--demo-formats')) await win.webContents.executeJavaScript('window.__demoFormats = true')
+      const explorerDemo = process.argv.find((a) => a.startsWith('--demo-explorer='))?.slice('--demo-explorer='.length)
+      if (explorerDemo) await win.webContents.executeJavaScript(`window.__demoExplorer = ${JSON.stringify(explorerDemo)}`)
       const editDemo = process.argv.find((a) => a.startsWith('--demo-edit='))?.slice('--demo-edit='.length)
       if (editDemo) await win.webContents.executeJavaScript(`window.__demoEdit = ${JSON.stringify(editDemo)}`)
       const healthDemo = process.argv.find((a) => a.startsWith('--demo-health='))?.slice('--demo-health='.length)

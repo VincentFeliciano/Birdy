@@ -50,6 +50,9 @@ const api: Api = {
     saveThumb: (rel, dataUrl) => ipcRenderer.send('models:save-thumb', rel, dataUrl),
     onChanged: (cb) => on('models:changed', cb),
     onImported: (cb) => on('models:imported', cb),
+    places: () => ipcRenderer.invoke('models:places'),
+    pickFolder: () => ipcRenderer.invoke('models:pick-folder'),
+    importArchive: (rel) => ipcRenderer.invoke('models:import-archive', rel),
   },
   files: {
     openModel: () => ipcRenderer.invoke('files:open-model'),

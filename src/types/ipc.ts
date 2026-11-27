@@ -54,9 +54,10 @@ export interface DownloadInfo {
 
 export interface ModelsEntry {
   name: string
-  /** Path inside the Models folder, forward slashes. */
+  /** Path inside the Models folder, or an absolute path elsewhere on the PC ("C:/…"), forward slashes. */
   rel: string
-  kind: 'dir' | 'model'
+  /** 'archive' is a ZIP outside the Models folder: opening it unpacks it into the Models folder. */
+  kind: 'dir' | 'model' | 'archive'
   size: number
   mtime: number
   models?: number
@@ -305,6 +306,12 @@ export interface Api {
     saveThumb(rel: string, dataUrl: string): void
     onChanged(cb: () => void): Unsubscribe
     onImported(cb: (r: ModelsImport) => void): Unsubscribe
+    /** Places to browse besides the Models folder: Downloads, Desktop, Documents and each drive. */
+    places(): Promise<{ name: string; rel: string; kind: 'models' | 'folder' | 'drive' }[]>
+    /** Lets the user pick any folder to browse; null if cancelled. */
+    pickFolder(): Promise<string | null>
+    /** Unpacks a ZIP from anywhere into the Models folder (shown like a finished download). */
+    importArchive(rel: string): Promise<void>
   }
   files: {
     openModel(): Promise<ModelFile | null>

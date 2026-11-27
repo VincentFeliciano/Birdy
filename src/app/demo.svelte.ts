@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { importDownloads as importModelsFromDownloads, models as modelsState, openFolder as openModelsFolder, openModel as openModelsModel, setModelsOpen } from '../features/models/store.svelte'
+import { sliceModel as sliceModelFromPanel, openArchive as openZipFromPanel, importDownloads as importModelsFromDownloads, models as modelsState, openFolder as openModelsFolder, openModel as openModelsModel, setModelsOpen } from '../features/models/store.svelte'
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
 import { printCost } from './costs.svelte'
@@ -247,6 +247,30 @@ export function installDemo() {
         ws.layout = 'library'
         await new Promise((res) => setTimeout(res, 300))
         ;[...document.querySelectorAll<HTMLButtonElement>('[role=tab]')].find((t) => t.textContent?.includes('Print history'))?.click()
+      }
+      return
+    }
+    const explorerDemo = (window as unknown as { __demoExplorer?: string }).__demoExplorer
+    if (explorerDemo) {
+      // Browse a folder outside the Models folder, then send a model from it to the slicer.
+      const [dir, action] = explorerDemo.split('|')
+      setModelsOpen(true)
+      const places = await window.api.models.places()
+      console.log(`explorer places: ${places.map((p) => `${p.name}=${p.rel}`).join(', ')}`)
+      openModelsFolder(dir!)
+      await until(() => !modelsState.loading && modelsState.entries.length > 0)
+      console.log(`explorer list: ${modelsState.entries.map((e) => `${e.kind}:${e.name}`).join(', ')}`)
+      const model = modelsState.entries.find((e) => e.kind === 'model')!
+      if (action === 'slice') {
+        await sliceModelFromPanel(model.rel)
+        console.log(`explorer slice: layout=${ws.layout} tab=${ws.sidebarTab} parts=${ws.parts.length} name=${ws.parts[0]?.name}`)
+      } else if (action === 'zip') {
+        const zip = modelsState.entries.find((e) => e.kind === 'archive')!
+        await openZipFromPanel(zip.rel)
+        await new Promise((r) => setTimeout(r, 1500))
+        console.log(`explorer zip: cwd=${modelsState.cwd} notice=${modelsState.notice} parts=${ws.parts.length}`)
+      } else {
+        await new Promise((r) => setTimeout(r, 800))
       }
       return
     }

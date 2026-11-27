@@ -28,6 +28,19 @@ export const isArchiveName = (name: string) => extname(name).toLowerCase() === '
 
 const toRel = (root: string, p: string) => relative(root, p).split('\\').join('/')
 
+/** A path the UI gave that points outside the Models folder: "C:" or "C:/Users/…". */
+export const isAbsRel = (rel: string) => /^[a-z]:(\/|$)/i.test(rel)
+
+/** The Windows path for an absolute UI path, refusing ".." so it stays the folder it names. */
+export function absPath(rel: string): string {
+  const parts = rel.split('/').filter(Boolean)
+  if (parts.some((p) => p === '..' || p === '.')) throw new Error('Bad path.')
+  return parts.length === 1 ? `${parts[0]}\\` : parts.join('\\')
+}
+const absRel = (p: string) => p.replace(/\\/g, '/').replace(/\/$/, '')
+/** Windows system folders that are never useful to browse for models. */
+const HIDDEN_DIRS = /^(\$|System Volume Information$|Windows$|ProgramData$|Recovery$|PerfLogs$|Config\.Msi$|node_modules$|AppData$)/i
+
 function sha256(path: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const h = createHash('sha256')
@@ -173,7 +186,7 @@ function result(root: string, folder: string, planned: Planned[], existing: bool
 export interface FolderEntry {
   name: string
   rel: string
-  kind: 'dir' | 'model'
+  kind: 'dir' | 'model' | 'archive'
   size: number
   mtime: number
   /** Model files inside a folder (all levels). */
@@ -182,6 +195,7 @@ export interface FolderEntry {
 
 /** Folders and model files in one folder of the Models tree (other files are hidden). */
 export async function listModels(root: string, rel: string): Promise<FolderEntry[]> {
+  if (isAbsRel(rel)) return listAnywhere(absPath(rel))
   const dir = join(root, ...rel.split('/').filter(Boolean))
   if (relative(root, dir).startsWith('..')) throw new Error('Outside the Models folder.')
   const out: FolderEntry[] = []
@@ -197,6 +211,29 @@ export async function listModels(root: string, rel: string): Promise<FolderEntry
     }
   }
   return out.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.kind === 'dir' ? -1 : 1))
+}
+
+/** Folders, models and ZIPs in any folder on the PC. Counts only look one level down, to stay quick on big drives. */
+async function listAnywhere(dir: string): Promise<FolderEntry[]> {
+  const out: FolderEntry[] = []
+  for (const d of await readdir(dir, { withFileTypes: true })) {
+    if (d.name.startsWith('.')) continue
+    const full = join(dir, d.name)
+    try {
+      if (d.isDirectory()) {
+        if (HIDDEN_DIRS.test(d.name)) continue
+        const st = await stat(full)
+        out.push({ name: d.name, rel: absRel(full), kind: 'dir', size: 0, mtime: st.mtimeMs, models: await countModels(full, 0) })
+      } else if (d.isFile() && (formatFromName(d.name) || isArchiveName(d.name))) {
+        const st = await stat(full)
+        out.push({ name: d.name, rel: absRel(full), kind: formatFromName(d.name) ? 'model' : 'archive', size: st.size, mtime: st.mtimeMs })
+      }
+    } catch {
+      // Locked or vanished: leave it out.
+    }
+  }
+  const order = { dir: 0, model: 1, archive: 2 }
+  return out.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name, undefined, { numeric: true }) : order[a.kind] - order[b.kind]))
 }
 
 /** Names anywhere in the Models tree containing every word of the query; models first, then folders. */

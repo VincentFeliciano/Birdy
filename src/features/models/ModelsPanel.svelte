@@ -1,22 +1,51 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte'
   import { fmtBytes } from '../../app/format'
-  import { crumbs, importDownloads, isFav, models, openFolder, openModel, refresh, setFavsOnly, setModelsOpen, setQuery, showInFolder, shown, toggleFav, up } from './store.svelte'
+  import { addModelToPlate, browseFolder, isElsewhere, openArchive, sliceModel, crumbs, importDownloads, isFav, models, openFolder, openModel, refresh, setFavsOnly, setModelsOpen, setQuery, showInFolder, shown, toggleFav, up } from './store.svelte'
 
   const api = window.api
   const path = $derived(crumbs())
   const list = $derived(shown())
   const filtering = $derived(!!models.query.trim() || models.favsOnly)
   const folderOf = (rel: string) => rel.split('/').slice(0, -1).join('/') || 'Models'
+  type Place = { name: string; rel: string; kind: 'models' | 'folder' | 'drive' }
+  let places = $state<Place[]>([{ name: 'Models', rel: '', kind: 'models' }])
+  $effect(() => {
+    void api.models.places().then((p) => (places = p)).catch(() => {})
+  })
+  // The place the current folder is in (the longest matching start), for the menu.
+  const place = $derived.by(() => {
+    const cwd = models.cwd.toLowerCase()
+    let best = places[0]!
+    for (const p of places)
+      if (p.rel && (cwd === p.rel.toLowerCase() || cwd.startsWith(p.rel.toLowerCase() + '/')) && p.rel.length >= best.rel.length) best = p
+    return isElsewhere() ? (best.rel ? best : null) : places[0]!
+  })
+  const elsewhere = $derived(isElsewhere())
+  function choosePlace(v: string) {
+    if (v === '__pick') void browseFolder()
+    else openFolder(v)
+  }
+  function onDragStart(e: DragEvent, rel: string) {
+    e.dataTransfer?.setData('application/x-birdy-model', rel)
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
+  }
 </script>
 
 <div class="mp neon-panel" role="region" aria-label="Models folder">
   <div class="head">
     <Icon name="cube" size={15} />
+    <select class="places" aria-label="Browse" title="Browse the Models folder or anywhere on this PC" value={place?.rel ?? '__here'} onchange={(e) => choosePlace(e.currentTarget.value)}>
+      {#if !place}<option value="__here">{models.cwd.split('/').pop()}</option>{/if}
+      {#each places as p (p.rel)}
+        <option value={p.rel}>{p.name}</option>
+      {/each}
+      <option value="__pick">Choose a folder…</option>
+    </select>
     <nav class="crumbs" aria-label="Folder">
-      <button class="crumb" class:here={!models.cwd} onclick={() => openFolder('')}>Models</button>
-      {#each path as c}
-        <span class="sep">›</span>
+      {#if !elsewhere}<button class="crumb" class:here={!models.cwd} onclick={() => openFolder('')}>Models</button>{/if}
+      {#each path as c, i}
+        {#if i > 0 || !elsewhere}<span class="sep">›</span>{/if}
         <button class="crumb" class:here={c.rel === models.cwd} onclick={() => openFolder(c.rel)}>{c.name}</button>
       {/each}
     </nav>
@@ -44,6 +73,7 @@
     {#if models.cwd && !filtering}
       <button class="icon-btn" title="Up one folder" aria-label="Up one folder" onclick={up}><Icon name="back" size={15} /></button>
     {/if}
+    <button class="ghost sm" title="Browse any folder on this PC" onclick={browseFolder}><Icon name="folder" size={13} />Folder…</button>
     <button class="ghost sm" title="Copy models and unpack ZIPs that are already in your Downloads folder" onclick={importDownloads}><Icon name="import" size={13} />Add from Downloads</button>
     <button class="icon-btn" title="Refresh" aria-label="Refresh" onclick={refresh}><Icon name="reload" size={15} /></button>
     <button class="icon-btn" title="Open this folder in File Explorer" aria-label="Open in File Explorer" onclick={() => api.models.reveal(models.cwd)}><Icon name="external" size={15} /></button>
@@ -62,7 +92,7 @@
     {:else if !filtering && !models.entries.length && !models.loading}
       <div class="empty">
         <p>
-          {models.cwd ? 'No models in this folder.' : 'No models yet. STL, 3MF, OBJ, GLB and PLY files you download land here, and ZIP downloads are unpacked into folders of their own. You can also put your own files in this folder.'}
+          {elsewhere ? 'No folders, 3D models or ZIP files here.' : models.cwd ? 'No models in this folder.' : 'No models yet. STL, 3MF, OBJ, GLB and PLY files you download land here, and ZIP downloads are unpacked into folders of their own. You can also put your own files in this folder.'}
         </p>
         <button class="ghost" onclick={() => api.models.reveal(models.cwd)}><Icon name="folder" size={14} />Open in File Explorer</button>
       </div>
@@ -71,12 +101,16 @@
       <div class="tile" class:hl={models.highlight === e.rel} class:busy={models.opening === e.rel}>
         <button
           class="main"
-          title={e.kind === 'dir' ? `Open folder ${e.name}` : `Open ${e.name} in the workspace`}
-          onclick={() => (e.kind === 'dir' ? openFolder(e.rel) : openModel(e.rel))}>
+          draggable={e.kind === 'model'}
+          ondragstart={(ev) => onDragStart(ev, e.rel)}
+          title={e.kind === 'dir' ? `Open folder ${e.name}` : e.kind === 'archive' ? `Unpack ${e.name} into the Models folder` : `Open ${e.name} in the workspace (or drag it onto the 3D view to add it to the plate)`}
+          onclick={() => (e.kind === 'dir' ? openFolder(e.rel) : e.kind === 'archive' ? openArchive(e.rel) : openModel(e.rel))}>
           <span class="thumb" class:dir={e.kind === 'dir'}>
             {#if e.kind === 'dir'}
               <Icon name="folder" size={34} />
               <span class="count mono">{e.models ?? 0}</span>
+            {:else if e.kind === 'archive'}
+              <Icon name="import" size={28} />
             {:else if models.thumbs[e.rel]}
               <img src={models.thumbs[e.rel]} alt="" draggable="false" />
             {:else}
@@ -98,6 +132,12 @@
           <button class="where icon-btn" title="Show in its folder" aria-label="Show {e.name} in its folder" onclick={() => showInFolder(e.rel)}>
             <Icon name="folder" size={12} />
           </button>
+        {/if}
+        {#if e.kind === 'model'}
+          <span class="acts">
+            <button class="act" title="Open {e.name} and go to the slicer" onclick={() => sliceModel(e.rel)}><Icon name="layers" size={11} />Slice</button>
+            <button class="act" title="Add {e.name} to the plate of the open model" onclick={() => addModelToPlate(e.rel)}><Icon name="plus" size={11} />Plate</button>
+          </span>
         {/if}
         <button class="reveal icon-btn" title="Show in File Explorer" aria-label="Show {e.name} in File Explorer" onclick={() => api.models.reveal(e.rel)}>
           <Icon name="external" size={12} />
@@ -124,9 +164,16 @@
   .crumbs {
     display: flex;
     align-items: center;
+    /* Long paths keep their end (the folder you're in) in view. */
+    justify-content: flex-end;
+    flex-shrink: 1;
     gap: 2px;
     min-width: 0;
     overflow: hidden;
+  }
+  .head :global(.ghost.sm) {
+    white-space: nowrap;
+    flex: none;
   }
   .crumb {
     padding: 2px 6px;
@@ -329,6 +376,50 @@
     height: 22px;
     opacity: 0;
     background: rgba(11, 12, 15, 0.8);
+  }
+  .places {
+    height: 24px;
+    max-width: 130px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 0 4px;
+  }
+  .acts {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: 66px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .act {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 20px;
+    border-radius: 5px;
+    border: 1px solid var(--neon-line);
+    background: rgba(0, 0, 0, 0.75);
+    color: var(--accent);
+    font: inherit;
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .act:hover {
+    background: rgba(var(--accent-rgb), 0.18);
+  }
+  .tile:hover .acts,
+  .acts:focus-within {
+    opacity: 1;
   }
   .tile:hover .reveal,
   .reveal:focus-visible {

@@ -19,7 +19,7 @@
   import { applyAccent, theme } from './theme.svelte'
   import ThemePanel from './ThemePanel.svelte'
   import ModelsPanel from '../features/models/ModelsPanel.svelte'
-  import { initModels, models } from '../features/models/store.svelte'
+  import { addModelToPlate, initModels, models, openModel } from '../features/models/store.svelte'
   import UpdatePanel from './UpdatePanel.svelte'
   import PrinterBar from '../features/printers/PrinterBar.svelte'
   import { bar, initPrinterBar, networkPrinters } from '../features/printers/status.svelte'
@@ -41,12 +41,32 @@
     dragDepth = Math.max(0, dragDepth - 1)
     if (!dragDepth) fileDrag = false
   }
+  // A model tile dragged from the Models panel.
+  const MODEL_DRAG = 'application/x-birdy-model'
+  const hasTile = (e: DragEvent) => e.dataTransfer?.types.includes(MODEL_DRAG) ?? false
   function onDragOver(e: DragEvent) {
+    if (hasTile(e)) {
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+      return
+    }
     if (!hasFiles(e)) return
     e.preventDefault()
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
   }
   function onDrop(e: DragEvent) {
+    if (hasTile(e)) {
+      e.preventDefault()
+      const rel = e.dataTransfer!.getData(MODEL_DRAG)
+      // Onto the 3D view with a model open: add it to that plate. Anywhere else: open it.
+      const onView = (e.target as HTMLElement | null)?.closest?.('canvas, .canvas')
+      if (rel && ws.activeId && ws.layout !== 'browse' && onView) void addModelToPlate(rel)
+      else if (rel) {
+        if (ws.layout === 'browse') ws.layout = 'split'
+        void openModel(rel)
+      }
+      return
+    }
     if (!hasFiles(e)) return
     e.preventDefault()
     dragDepth = 0
