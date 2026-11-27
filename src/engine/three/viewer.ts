@@ -213,9 +213,12 @@ export class Viewer {
     this.scene.add(this.marks, this.rings, this.islands)
 
     // Neon glow: only colours pushed above 1.0 (the HDR neon lines) bloom; the model does not.
-    this.composer = new EffectComposer(this.renderer)
+    // Its own multisampled target: the renderer's antialias does not reach post-processing, and
+    // without it thin lines crawl and flicker as the view moves.
+    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
+    this.composer = new EffectComposer(this.renderer, target)
     this.renderPass = new RenderPass(this.scene, this.camera)
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.65, 0.6, 1.0)
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.42, 0.5, 1.0)
     this.composer.addPass(this.renderPass)
     this.composer.addPass(this.bloom)
     this.composer.addPass(new OutputPass())
@@ -235,13 +238,16 @@ export class Viewer {
     }
     const plate = new THREE.Mesh(
       new THREE.PlaneGeometry(this.bedW, this.bedD),
-      new THREE.MeshStandardMaterial({ color: '#14171C', roughness: 0.95, metalness: 0 }),
+      new THREE.MeshStandardMaterial({ color: '#14171C', roughness: 0.95, metalness: 0, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4 }),
     )
     plate.position.z = -0.05
-    const minor = new THREE.LineSegments(gridLines(this.bedW, this.bedD, 10, 0.01), new THREE.LineBasicMaterial({ color: '#1F232A' }))
+    plate.renderOrder = -1
+    const minor = new THREE.LineSegments(gridLines(this.bedW, this.bedD, 10, 0.01), new THREE.LineBasicMaterial({ color: '#1F232A', depthWrite: false }))
     // Axis lines from the plate's front-left corner: X red, Y green, Z blue.
     const axes = new THREE.AxesHelper(36)
     axes.position.set(-this.bedW / 2, -this.bedD / 2, 0.02)
+    ;(axes.material as THREE.LineBasicMaterial).depthWrite = false
+    axes.renderOrder = 2
     const colors = axes.geometry.getAttribute('color') as THREE.BufferAttribute
     const palette = ['#E5484D', '#E5484D', '#46A758', '#46A758', '#3E8EF7', '#3E8EF7'].map((c) => new THREE.Color(c))
     palette.forEach((c, i) => colors.setXYZ(i, c.r, c.g, c.b))
@@ -270,7 +276,7 @@ export class Viewer {
     }
     const major = new THREE.LineSegments(
       gridLines(this.bedW, this.bedD, 50, 0.02),
-      new THREE.LineBasicMaterial({ color: this.accent, transparent: true, opacity: 0.28 }),
+      new THREE.LineBasicMaterial({ color: this.accent, transparent: true, opacity: 0.28, depthWrite: false }),
     )
     // Plate edge drawn in HDR so the bloom pass makes it glow like a neon tube.
     const hw = this.bedW / 2
@@ -282,8 +288,10 @@ export class Viewer {
         new THREE.Vector3(hw, hd, 0.03),
         new THREE.Vector3(-hw, hd, 0.03),
       ]),
-      new THREE.LineBasicMaterial({ color: this.accent.clone().multiplyScalar(3), toneMapped: false }),
+      new THREE.LineBasicMaterial({ color: this.accent.clone().multiplyScalar(2.2), toneMapped: false, depthWrite: false }),
     )
+    major.renderOrder = 1
+    edge.renderOrder = 3
     this.neon.add(major, edge)
     ;(this.bboxHelper.material as THREE.LineBasicMaterial).color.copy(this.accent).multiplyScalar(1.5)
   }
@@ -313,9 +321,26 @@ export class Viewer {
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop)
     this.controls.update()
+    this.fitDepthRange()
     this.updateMarks()
     this.updateIslands()
     this.composer.render()
+  }
+
+  /**
+   * Keeps the depth range proportional to how far the camera is, so depth stays precise near the
+   * plate at any zoom (a fixed huge range makes surfaces close together flicker).
+   */
+  private fitDepthRange() {
+    if (this.camera !== this.persp) return
+    const d = this.persp.position.distanceTo(this.controls.target)
+    const near = Math.max(0.05, d / 300)
+    const far = Math.max(near * 10, d * 30, this.bedW * 6)
+    if (Math.abs(near - this.persp.near) > near * 0.05 || Math.abs(far - this.persp.far) > far * 0.05) {
+      this.persp.near = near
+      this.persp.far = far
+      this.persp.updateProjectionMatrix()
+    }
   }
 
   /** Keeps highlights on the model as it moves, and pulses them. */
