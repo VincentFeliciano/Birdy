@@ -7,6 +7,7 @@
   import SlicePanel from '../slicing/SlicePanel.svelte'
   import { setOverride, sl } from '../slicing/store.svelte'
   import type { Issue } from '../../engine/geometry/printCheck'
+  import { MARK_STYLE } from '../../engine/three/viewer'
   import { fmtBytes, fmtInt, fmtNum, mmToIn } from '../../app/format'
   import {
     activeModel,
@@ -15,6 +16,7 @@
     checkNow,
     convertUnits,
     fitToBed,
+    focusMark,
     repairActive,
     undoRepair,
     saveToLibrary,
@@ -131,6 +133,16 @@
                       <div class="it">{i.title}</div>
                       <div class="id">{i.detail}</div>
                       <div class="fixes">
+                        {#if i.mark}
+                          <button
+                            class="ghost sm show"
+                            class:on={ws.markFocus === i.mark}
+                            style="--mark: {MARK_STYLE[i.mark].color}"
+                            title={ws.markFocus === i.mark ? 'Show all problems again' : 'Highlight just this on the model and zoom to it'}
+                            onclick={() => focusMark(i.mark!)}>
+                            <span class="swatch"></span>{ws.markFocus === i.mark ? 'Showing' : 'Show'}
+                          </button>
+                        {/if}
                         {#if i.code === firstMeshIssue}
                           <button class="ghost sm" disabled={ws.repairing} onclick={repairActive}><Icon name="wrench" size={12} />Repair mesh</button>
                         {:else if i.code === 'below' || i.code === 'above'}
@@ -153,6 +165,9 @@
                   </li>
                 {/each}
               </ul>
+              {#if !ws.markFocus && report.issues.some((i) => i.mark && ['holes', 'nonmanifold', 'flipped', 'degenerate'].includes(i.code))}
+                <p class="hint marked">Mesh problems are lit up on the model. Use Show to zoom to one.</p>
+              {/if}
             {/if}
             <dl class="checkstats">
               <dt>Watertight</dt>
@@ -605,6 +620,19 @@
     height: 24px;
     padding: 0 8px;
     font-size: 12px;
+  }
+  .show .swatch {
+    width: 8px;
+    height: 8px;
+    margin-right: 2px;
+    border-radius: 50%;
+    background: var(--mark);
+    box-shadow: 0 0 6px var(--mark);
+  }
+  .show.on {
+    border-color: var(--mark);
+    color: var(--text);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--mark) 45%, transparent);
   }
   .done {
     display: inline-flex;

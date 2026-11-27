@@ -88,4 +88,30 @@ r = run(cube(0.5))
 assert.ok(codes(r).includes('tiny'))
 console.log('ok  tiny model flagged for units')
 
+// 10. Problem locations: the hole sits where the missing top face was.
+r = run(cube(20, 0, 0, 0, 1))
+const holes = r.marks?.holeCenters
+assert.ok(holes && holes.length === 4, `holes ${holes?.length}`)
+assert.ok(Math.abs(holes[0] - 10) < 1e-4 && Math.abs(holes[1] - 10) < 1e-4 && Math.abs(holes[2] - 20) < 1e-4, `center ${[...holes]}`)
+assert.ok(Math.abs(holes[3] - Math.hypot(10, 10)) < 1e-3, `radius ${holes[3]}`)
+assert.equal(r.marks?.openEdges?.length, 4 * 6)
+assert.equal(r.issues.find((i) => i.code === 'holes')?.mark, 'openEdges')
+console.log('ok  hole located at the open top')
+
+// 11. One face wound the wrong way gets marked, the rest do not.
+const oneFlipped = cube()
+// Swap two vertices of the first triangle (part of the bottom).
+for (let k = 0; k < 3; k++) [oneFlipped[3 + k], oneFlipped[6 + k]] = [oneFlipped[6 + k], oneFlipped[3 + k]]
+r = run(oneFlipped)
+assert.ok(codes(r).includes('flipped'))
+assert.equal(r.marks?.flippedFaces?.length, 9, `flipped ${r.marks?.flippedFaces?.length}`)
+assert.ok(r.marks!.flippedFaces!.every((v, i) => i % 3 !== 2 || v === 0), 'flipped face is on the bottom')
+assert.equal(r.issues.find((i) => i.code === 'flipped')?.mark, 'flippedFaces')
+console.log('ok  flipped face marked')
+
+// 12. A clean cube carries no marks.
+r = run(cube())
+assert.ok(Object.values(r.marks ?? {}).every((m) => !m), JSON.stringify(Object.keys(r.marks ?? {})))
+console.log('ok  clean cube has no marks')
+
 console.log('\nall print-check tests passed')

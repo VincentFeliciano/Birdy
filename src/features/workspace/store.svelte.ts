@@ -9,7 +9,7 @@ import { runPrintCheck, worldTriangles } from '../../engine/geometry/runPrintChe
 import { runRepair } from '../../engine/geometry/runRepair'
 import { describeRepair } from '../../engine/geometry/repair'
 import { defaultMaterial } from '../../engine/loaders/loadModel'
-import type { BedSize, PrintReport } from '../../engine/geometry/printCheck'
+import type { BedSize, MarkKey, PrintMarks, PrintReport } from '../../engine/geometry/printCheck'
 
 function storedBed(): BedSize {
   try {
@@ -79,6 +79,8 @@ export const ws = $state({
   fixNote: null as string | null,
   /** The active model has a repair that can be undone. */
   canUndoRepair: false,
+  /** Problem picked with Show: only its area is highlighted and the camera zooms to it. */
+  markFocus: null as MarkKey | null,
 })
 
 export function remember() {
@@ -93,6 +95,8 @@ interface Doc {
   original: ModelFile
   warnings: string[]
   report: PrintReport | null
+  /** Where the last check found problems, and the model transform it was measured at. */
+  marks: { marks: PrintMarks; at: THREE.Matrix4 } | null
   triangles: number
   meshes: number
   initialZ: number
@@ -144,6 +148,7 @@ export function attachViewer(v: Viewer | null) {
   if (doc) {
     v.setModel(doc.wrapper)
     v.view('iso')
+    showMarks(false)
   }
 }
 
@@ -186,14 +191,34 @@ export async function checkNow() {
   const seq = ++checkSeq
   ws.checking = true
   try {
-    const report = await runPrintCheck(doc.wrapper, { x: BED.x, y: BED.y, z: BED.z }, doc.warnings)
+    doc.wrapper.updateMatrixWorld(true)
+    const at = doc.wrapper.matrixWorld.clone()
+    const { marks, ...report } = await runPrintCheck(doc.wrapper, { x: BED.x, y: BED.y, z: BED.z }, doc.warnings)
+    // The highlight buffers stay out of reactive state; Svelte would proxy them.
     doc.report = report
-    if (seq === checkSeq && ws.activeId === id) ws.report = report
+    doc.marks = marks ? { marks, at } : null
+    if (seq === checkSeq && ws.activeId === id) {
+      ws.report = report
+      if (ws.markFocus && !report.issues.some((i) => i.mark === ws.markFocus)) ws.markFocus = null
+      showMarks(false)
+    }
   } catch (err) {
     if (seq === checkSeq) ws.error = `Print check failed: ${(err as Error).message}`
   } finally {
     if (seq === checkSeq) ws.checking = false
   }
+}
+
+/** Draws the active model's problem areas; with a focus, only that one, zoomed to. */
+function showMarks(zoom: boolean) {
+  const doc = activeDoc()
+  viewer?.setMarks(doc?.marks?.marks ?? null, doc?.marks?.at ?? null, ws.markFocus, zoom)
+}
+
+/** Show button on an issue: highlight just that problem and zoom to it; again to go back. */
+export function focusMark(key: MarkKey | null) {
+  ws.markFocus = ws.markFocus === key ? null : key
+  showMarks(!!ws.markFocus)
 }
 
 export function getReport(id: string) {
@@ -238,6 +263,7 @@ export async function openModelFile(file: ModelFile) {
       original: file,
       warnings,
       report: null,
+      marks: null,
       fixNote: null,
       triangles: countTriangles(obj),
       meshes: countMeshes(obj),
@@ -265,11 +291,13 @@ export function activate(id: string, frame = false) {
   if (ws.activeId !== id) modelListener?.('switch')
   ws.activeId = id
   ws.report = doc.report
+  ws.markFocus = null
   ws.fixNote = doc.fixNote
   ws.canUndoRepair = !!doc.beforeRepair
   if (!doc.report) scheduleCheck(0)
   viewer?.setModel(doc.wrapper)
   viewer?.setWireframe(ws.wireframe)
+  showMarks(false)
   refresh()
   // Frame after the DOM settles (the sidebar may appear and narrow the viewport).
   if (frame) void tick().then(() => requestAnimationFrame(() => viewer?.view('iso')))
@@ -290,7 +318,9 @@ export function closeModel(id: string) {
     else {
       ws.activeId = null
       ws.report = null
+      ws.markFocus = null
       viewer?.setModel(null)
+      viewer?.setMarks(null, null, null, false)
       refresh()
     }
   }
@@ -512,7 +542,9 @@ function afterGeometryChange(doc: Doc) {
   doc.wrapper.updateMatrixWorld(true)
   markModified()
   modelListener?.('edit')
+  doc.marks = null
   if (docs.get(ws.activeId ?? '') === doc) {
+    showMarks(false)
     viewer?.setModel(doc.wrapper)
     viewer?.setWireframe(ws.wireframe)
     viewer?.changed()

@@ -6,6 +6,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import type { GcodePreview } from '../gcode/parseGcode'
+import type { MarkKey, PrintMarks } from '../geometry/printCheck'
 
 // 3D printing convention: Z is up, the build plate is the XY plane, units are millimetres.
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
@@ -35,6 +36,67 @@ const VIEW_DIRS: Record<ViewPreset, THREE.Vector3> = {
   // A hair off-axis so orbit controls keep a stable "up" when looking straight down/up.
   top: new THREE.Vector3(0, -0.0001, 1),
   bottom: new THREE.Vector3(0, -0.0001, -1),
+}
+
+/** Highlight colours for problem areas (HDR where they should glow). */
+export const MARK_STYLE: Record<MarkKey, { color: string; kind: 'edges' | 'faces' | 'points' }> = {
+  openEdges: { color: '#FF3344', kind: 'edges' },
+  holeCenters: { color: '#FF3344', kind: 'points' },
+  nonManifoldEdges: { color: '#FF8A1F', kind: 'edges' },
+  flippedFaces: { color: '#FF2BD6', kind: 'faces' },
+  degenerate: { color: '#FFE14D', kind: 'points' },
+  overhangFaces: { color: '#3E8EF7', kind: 'faces' },
+  belowFaces: { color: '#FF3344', kind: 'faces' },
+  floatingFaces: { color: '#A86BFF', kind: 'faces' },
+}
+/** Shown without being asked for: problems with the mesh itself. */
+const DEFAULT_MARKS: MarkKey[] = ['openEdges', 'holeCenters', 'nonManifoldEdges', 'flippedFaces', 'degenerate']
+/** Hole rings drawn when nothing is focused; the biggest holes come first. */
+const DEFAULT_RINGS = 60
+
+/** Problems small enough to need a ring around them to be found. */
+const BEACON_MARKS = new Set<MarkKey>(['nonManifoldEdges', 'flippedFaces', 'degenerate'])
+
+/** Centres of groups of nearby points (vertices within one `cell` of each other), most points first. */
+function clusterCenters(data: Float32Array, cell: number, max: number) {
+  const c = Math.max(cell, 1e-3)
+  const cells = new Map<string, { x: number; y: number; z: number; n: number }>()
+  for (let i = 0; i + 2 < data.length; i += 3) {
+    const k = `${Math.floor(data[i]! / c)},${Math.floor(data[i + 1]! / c)},${Math.floor(data[i + 2]! / c)}`
+    const g = cells.get(k)
+    if (g) {
+      g.x += data[i]!
+      g.y += data[i + 1]!
+      g.z += data[i + 2]!
+      g.n++
+    } else cells.set(k, { x: data[i]!, y: data[i + 1]!, z: data[i + 2]!, n: 1 })
+  }
+  // Neighbouring cells split one spot in two; fold anything within a cell of a kept centre into it.
+  const out: { p: THREE.Vector3; n: number }[] = []
+  for (const g of [...cells.values()].sort((a, b) => b.n - a.n)) {
+    const p = new THREE.Vector3(g.x / g.n, g.y / g.n, g.z / g.n)
+    const near = out.find((o) => o.p.distanceTo(p) < c * 1.5)
+    if (near) {
+      near.p.multiplyScalar(near.n).addScaledVector(p, g.n).divideScalar(near.n + g.n)
+      near.n += g.n
+    } else if (out.length < max) out.push({ p, n: g.n })
+  }
+  return out.map((o) => o.p)
+}
+
+let ringTexture: THREE.Texture | null = null
+function getRingTexture() {
+  if (ringTexture) return ringTexture
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const g = c.getContext('2d')!
+  g.strokeStyle = '#fff'
+  g.lineWidth = 6
+  g.beginPath()
+  g.arc(32, 32, 26, 0, Math.PI * 2)
+  g.stroke()
+  ringTexture = new THREE.CanvasTexture(c)
+  return ringTexture
 }
 
 /** Owns the WebGL canvas, cameras, controls, the build plate and the active model. */
@@ -67,6 +129,14 @@ export class Viewer {
   private pvTravel: THREE.LineSegments | null = null
   private pvData: GcodePreview | null = null
   private pvLayer = 0
+  /** Problem highlights, drawn in the space the check measured and moved along with the model. */
+  private marks = new THREE.Group()
+  /** Hole rings live in world space so they keep their screen size. */
+  private rings = new THREE.Group()
+  private ringCenters: THREE.Vector3[] = []
+  private markAtInv = new THREE.Matrix4()
+  private markPulse: { mat: THREE.Material & { opacity: number }; base: number }[] = []
+  private markFocused = false
 
   /** Fired while dragging the gizmo (`live`) and once when a drag ends. */
   onTransform: ((live: boolean) => void) | null = null
@@ -112,6 +182,8 @@ export class Viewer {
       this.onTransform?.(true)
     })
     this.scene.add(this.gizmo.getHelper())
+    this.marks.matrixAutoUpdate = false
+    this.scene.add(this.marks, this.rings)
 
     // Neon glow: only colours pushed above 1.0 (the HDR neon lines) bloom; the model does not.
     this.composer = new EffectComposer(this.renderer)
@@ -214,7 +286,149 @@ export class Viewer {
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop)
     this.controls.update()
+    this.updateMarks()
     this.composer.render()
+  }
+
+  /** Keeps highlights on the model as it moves, and pulses them. */
+  private updateMarks() {
+    const show = !!this.model?.visible && (this.marks.children.length > 0 || this.rings.children.length > 0)
+    this.marks.visible = this.rings.visible = show
+    if (!show || !this.model) return
+    this.marks.matrix.multiplyMatrices(this.model.matrixWorld, this.markAtInv)
+    this.marks.matrixWorldNeedsUpdate = true
+    const t = performance.now() / 1000
+    const wave = 0.5 + 0.5 * Math.sin(t * (this.markFocused ? 5 : 2.5))
+    for (const { mat, base } of this.markPulse) mat.opacity = base * (0.55 + 0.45 * wave)
+    const scale = 0.045 * (this.markFocused ? 1 + 0.35 * wave : 1 + 0.15 * wave)
+    this.rings.children.forEach((sprite, i) => {
+      sprite.position.copy(this.ringCenters[i]!).applyMatrix4(this.marks.matrix)
+      sprite.scale.setScalar(scale)
+    })
+  }
+
+  /**
+   * Highlights where the print check found problems. `at` is the model's transform when it was
+   * checked. With `focus`, only that problem is drawn (pulsing), and `zoom` frames the camera on it.
+   */
+  setMarks(marks: PrintMarks | null, at: THREE.Matrix4 | null, focus: MarkKey | null, zoom = false) {
+    this.clearMarks()
+    if (!marks || !at) return
+    this.markAtInv.copy(at).invert()
+    this.markFocused = !!focus
+    const keys = focus ? (focus === 'openEdges' ? ['openEdges', 'holeCenters'] : [focus]) : DEFAULT_MARKS
+    const box = new THREE.Box3()
+    for (const key of keys as MarkKey[]) {
+      const data = marks[key]
+      if (!data?.length) continue
+      const style = MARK_STYLE[key]
+      const color = new THREE.Color(style.color)
+      if (key === 'holeCenters') {
+        const count = Math.min(data.length / 4, focus ? Infinity : DEFAULT_RINGS)
+        for (let i = 0; i < count; i++) {
+          const c = new THREE.Vector3(data[i * 4], data[i * 4 + 1], data[i * 4 + 2])
+          this.addRing(c, color)
+          const r = data[i * 4 + 3]!
+          box.expandByPoint(c.clone().addScalar(r)).expandByPoint(c.clone().addScalar(-r))
+        }
+        continue
+      }
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(data, 3))
+      geo.computeBoundingBox()
+      box.union(geo.boundingBox!)
+      // Small problems (a few faces or edges) are easy to miss: ring each cluster of them too.
+      if (BEACON_MARKS.has(key) && this.model) {
+        const size = new THREE.Box3().setFromObject(this.model).getSize(new THREE.Vector3()).length()
+        for (const c of clusterCenters(data, size / 20, focus ? 300 : DEFAULT_RINGS)) this.addRing(c, color)
+      }
+      if (style.kind === 'faces') {
+        const mat = new THREE.MeshBasicMaterial({
+          color: color.clone().multiplyScalar(1.15),
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.7,
+          depthWrite: false,
+          polygonOffset: true,
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2,
+          toneMapped: false,
+        })
+        const mesh = new THREE.Mesh(geo, mat)
+        mesh.renderOrder = 10
+        this.marks.add(mesh)
+        this.markPulse.push({ mat, base: 0.7 })
+        // Faint copy through the model so hidden areas still show.
+        const ghostMat = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.2, depthTest: false, depthWrite: false, toneMapped: false })
+        const ghost = new THREE.Mesh(geo, ghostMat)
+        ghost.renderOrder = 9
+        this.marks.add(ghost)
+      } else if (style.kind === 'edges') {
+        // Bright where visible, dim where the model hides it.
+        const front = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(3), toneMapped: false }))
+        const backMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.4, depthTest: false, toneMapped: false })
+        const back = new THREE.LineSegments(geo, backMat)
+        front.renderOrder = 11
+        back.renderOrder = 11
+        this.marks.add(back, front)
+        this.markPulse.push({ mat: backMat, base: 0.4 })
+      } else {
+        const mat = new THREE.PointsMaterial({
+          color: color.clone().multiplyScalar(2.5),
+          size: 7,
+          sizeAttenuation: false,
+          depthTest: false,
+          transparent: true,
+          toneMapped: false,
+        })
+        const pts = new THREE.Points(geo, mat)
+        pts.renderOrder = 12
+        this.marks.add(pts)
+        this.markPulse.push({ mat, base: 1 })
+      }
+    }
+    this.updateMarks()
+    if (zoom && this.model && !box.isEmpty()) {
+      // Bring the box into world space as the model sits now, then frame it from the current angle.
+      const m = new THREE.Matrix4().multiplyMatrices(this.model.matrixWorld, this.markAtInv)
+      const sphere = box.applyMatrix4(m).getBoundingSphere(new THREE.Sphere())
+      sphere.radius = Math.max(sphere.radius * 1.4, 3)
+      // Overhangs and parts below the plate face down: look up at them from underneath.
+      const fromBelow = focus === 'overhangFaces' || focus === 'belowFaces'
+      const dir = fromBelow ? new THREE.Vector3(1, -1.25, -0.8).normalize() : this.camera.position.clone().sub(this.controls.target).normalize()
+      this.frame(dir, sphere)
+    }
+  }
+
+  private addRing(center: THREE.Vector3, color: THREE.Color) {
+    const mat = new THREE.SpriteMaterial({
+      map: getRingTexture(),
+      color: color.clone().multiplyScalar(2.5),
+      sizeAttenuation: false,
+      depthTest: false,
+      transparent: true,
+      toneMapped: false,
+    })
+    const sprite = new THREE.Sprite(mat)
+    sprite.renderOrder = 12
+    this.rings.add(sprite)
+    this.ringCenters.push(center)
+    this.markPulse.push({ mat, base: 1 })
+  }
+
+  private clearMarks() {
+    for (const group of [this.marks, this.rings]) {
+      for (const child of [...group.children]) {
+        group.remove(child)
+        const o = child as THREE.Mesh
+        // Front and back passes share one geometry; disposing twice is harmless.
+        o.geometry?.dispose()
+        ;(o.material as THREE.Material).dispose()
+      }
+    }
+    this.ringCenters = []
+    this.markPulse = []
+    this.markFocused = false
   }
 
   setModel(model: THREE.Object3D | null) {
@@ -329,10 +543,10 @@ export class Viewer {
     this.frame(VIEW_DIRS[preset].clone().normalize())
   }
 
-  private frame(dir: THREE.Vector3) {
+  private frame(dir: THREE.Vector3, sphere?: THREE.Sphere) {
     // The panel may have just been shown or resized; measure before framing.
     this.resize()
-    const { center, radius } = this.focusSphere()
+    const { center, radius } = sphere ?? this.focusSphere()
     const r = Math.max(radius, 1)
     // Fit whichever of the vertical or horizontal field of view is tighter.
     const vHalf = THREE.MathUtils.degToRad(this.persp.fov / 2)
@@ -450,6 +664,7 @@ export class Viewer {
 
   dispose() {
     this.setPreview(null, () => '#fff')
+    this.clearMarks()
     cancelAnimationFrame(this.raf)
     this.ro.disconnect()
     this.gizmo.dispose()

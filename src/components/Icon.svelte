@@ -52,6 +52,7 @@
     import: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 15v4h14v-4"/>',
     palette: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10" cy="7.5" r="1.2"/><circle cx="14.5" cy="7.5" r="1.2"/>',
     wrench: '<path d="M14.5 6.5a4 4 0 0 0 5 5l-8.8 8.8a2.1 2.1 0 0 1-3-3l8.8-8.8z" transform="translate(-1 -1)"/><path d="M15.2 4.6a4.5 4.5 0 0 1 4.2 4.2l-2.6.4-2-2z"/>',
+    target: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
   } as const
 
   export type IconName = keyof typeof ICONS

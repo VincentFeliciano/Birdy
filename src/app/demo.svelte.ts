@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { importDownloads as importModelsFromDownloads, models as modelsState, openFolder as openModelsFolder, openModel as openModelsModel, setModelsOpen } from '../features/models/store.svelte'
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
-import { checkNow, openModelFile, repairActive, setXForm, ws } from '../features/workspace/store.svelte'
+import { checkNow, focusMark, openModelFile, repairActive, setXForm, ws } from '../features/workspace/store.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
 /** Builds a small printable sample (a torus knot, ~70 mm) as a real binary STL and opens it. */
@@ -65,6 +65,12 @@ export function installDemo() {
         await checkNow()
         const r = ws.report!
         console.log(`repair after: verdict=${r.verdict} issues=${issueList()} watertight=${r.stats.watertight} volume=${r.stats.volumeCm3?.toFixed(2)} note=${ws.fixNote}`)
+      } else if (repairDemo.startsWith('show:')) {
+        // Press Show on one issue: highlight just that problem and zoom to it.
+        const issue = before.issues.find((i) => i.code === repairDemo.slice(5))
+        if (!issue?.mark) throw new Error(`no locatable ${repairDemo.slice(5)} issue`)
+        focusMark(issue.mark)
+        console.log(`repair show: ${issue.code} -> ${ws.markFocus}`)
       } else if (repairDemo === 'direct') {
         await repairActive()
         await checkNow()
