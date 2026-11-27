@@ -3,6 +3,9 @@
   import Icon from '../../components/Icon.svelte'
   import {
     BED,
+    addShape,
+    writeTextOnPart,
+    type ShapeKind,
     splitToFit,
     combineParts,
     cutPart,
@@ -25,6 +28,19 @@
   let passes = $state(10)
   let detail = $state(0.5)
   let wall = $state(2)
+  let shape = $state<ShapeKind>('box')
+  let shapeSize = $state(20)
+  let textOpen = $state(false)
+  let text = $state('Birdy')
+  let font = $state('Arial')
+  let bold = $state(true)
+  let textSize = $state(8)
+  let textDepth = $state(1)
+  let textPlace = $state<'top' | 'front'>('top')
+  let textMode = $state<'emboss' | 'engrave' | 'separate'>('emboss')
+  let historyOpen = $state(false)
+  const FONTS = ['Arial', 'Arial Black', 'Segoe UI', 'Impact', 'Verdana', 'Georgia', 'Times New Roman', 'Consolas', 'Comic Sans MS', 'Trebuchet MS']
+  const when = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   let fitOpen = $state(false)
   let fitMode = $state<'smart' | 'grid'>('smart')
   let joiner = $state<'pegs' | 'dowels' | 'filament' | 'none'>('pegs')
@@ -151,6 +167,51 @@
     </div>
   {/if}
 
+  <div class="row2">
+    <button class="ghost" class:on={textOpen} disabled={busy} title="Raise text from, or cut it into, the model; or add it as its own part" onclick={() => (textOpen = !textOpen)}><Icon name="pencil" size={13} />Text…</button>
+    <div class="shape">
+      <select bind:value={shape} aria-label="Shape">
+        <option value="box">Box</option>
+        <option value="cylinder">Cylinder</option>
+        <option value="sphere">Sphere</option>
+        <option value="cone">Cone</option>
+        <option value="pyramid">Pyramid</option>
+        <option value="torus">Ring</option>
+        <option value="tube">Tube</option>
+      </select>
+      <input class="mono num" type="number" min="1" max="1000" step="1" bind:value={shapeSize} aria-label="Shape size (mm)" title="Size (mm)" />
+      <button class="icon-btn" disabled={busy} title="Add this shape to the plate" aria-label="Add shape" onclick={() => addShape(shape, shapeSize)}><Icon name="plus" size={13} /></button>
+    </div>
+  </div>
+
+  {#if textOpen}
+    <div class="cut">
+      <textarea rows="2" bind:value={text} aria-label="Text" placeholder="Text to write"></textarea>
+      <div class="opt">
+        <select bind:value={font} aria-label="Font" style="font-family: {font}">
+          {#each FONTS as f}<option value={f} style="font-family: {f}">{f}</option>{/each}
+        </select>
+        <label class="chk"><input type="checkbox" bind:checked={bold} />Bold</label>
+      </div>
+      <div class="opt">
+        <label class="lbl">Letter height <input class="mono num" type="number" min="2" max="200" step="0.5" bind:value={textSize} />mm</label>
+        <label class="lbl">Depth <input class="mono num" type="number" min="0.2" max="50" step="0.2" bind:value={textDepth} />mm</label>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="Text mode">
+        <button role="radio" aria-checked={textMode === 'emboss'} class:on={textMode === 'emboss'} onclick={() => (textMode = 'emboss')}>Raised</button>
+        <button role="radio" aria-checked={textMode === 'engrave'} class:on={textMode === 'engrave'} onclick={() => (textMode = 'engrave')}>Engraved</button>
+        <button role="radio" aria-checked={textMode === 'separate'} class:on={textMode === 'separate'} onclick={() => (textMode = 'separate')}>Own part</button>
+      </div>
+      {#if textMode !== 'separate'}
+        <div class="seg" role="radiogroup" aria-label="Where">
+          <button role="radio" aria-checked={textPlace === 'top'} class:on={textPlace === 'top'} onclick={() => (textPlace = 'top')}>On top</button>
+          <button role="radio" aria-checked={textPlace === 'front'} class:on={textPlace === 'front'} onclick={() => (textPlace = 'front')}>On front</button>
+        </div>
+      {/if}
+      <button class="primary sm" disabled={busy || !text.trim()} onclick={() => writeTextOnPart({ text, font, bold, size: textSize, depth: textDepth, place: textPlace, mode: textMode })}><Icon name="pencil" size={13} />Write it</button>
+    </div>
+  {/if}
+
   <div class="opts">
     <div class="opt">
       <button class="ghost" disabled={busy} title="Remove triangles while keeping the shape within the tolerance" onclick={() => simplifyPart(tol)}><Icon name="simplify" size={13} />Simplify</button>
@@ -189,6 +250,19 @@
 
   {#if ws.undoLabel}
     <button class="ghost undo" disabled={busy} onclick={undoEdit}><Icon name="reset" size={13} />Undo {ws.undoLabel.toLowerCase()}</button>
+  {/if}
+
+  {#if ws.history.length}
+    <button class="hist-head" aria-expanded={historyOpen} onclick={() => (historyOpen = !historyOpen)}>
+      <span class="hud-label">History</span><span class="dim2">{ws.history.length} change{ws.history.length === 1 ? '' : 's'} · {historyOpen ? 'hide' : 'show'}</span>
+    </button>
+    {#if historyOpen}
+      <ol class="hist" aria-label="Edit and repair history">
+        {#each [...ws.history].reverse() as h}
+          <li><span class="mono t">{when(h.at)}</span><b>{h.label}</b><span class="n">{h.note}</span></li>
+        {/each}
+      </ol>
+    {/if}
   {/if}
 </section>
 
@@ -311,6 +385,89 @@
     height: 28px;
     font-size: 12px;
     justify-content: center;
+  }
+  .shape {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .shape select {
+    flex: 1;
+    min-width: 0;
+  }
+  .shape .num {
+    width: 46px;
+    height: 28px;
+  }
+  .shape .icon-btn {
+    width: 28px;
+    height: 28px;
+    flex: none;
+  }
+  textarea {
+    resize: vertical;
+    min-height: 40px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    padding: 6px;
+  }
+  .chk {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .lbl .num {
+    width: 48px;
+    margin: 0 3px;
+  }
+  .hist-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 12px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+  .dim2 {
+    font-size: 11px;
+    color: var(--faint);
+  }
+  .hist {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 180px;
+    overflow: auto;
+  }
+  .hist li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .hist .t {
+    color: var(--faint);
+    grid-row: span 2;
+  }
+  .hist b {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .hist .n {
+    grid-column: 2;
   }
   .opts {
     display: flex;

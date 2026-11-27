@@ -8,7 +8,7 @@ import { isFdmKind } from '../types/slicing'
 import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelte'
 import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
-import { splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
+import { addShape, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
@@ -275,6 +275,33 @@ export function installDemo() {
       return
     }
     const editDemo = (window as unknown as { __demoEdit?: string }).__demoEdit
+    if (editDemo === 'orient') {
+      // An "L" raised on a lone 30 mm box: seen from above (top) or the front, most of an L's area is low and left.
+      const { runCsg } = await import('../engine/geometry/runCsg')
+      const box = () => new Float32Array(new THREE.BoxGeometry(30, 30, 30).translate(0, 0, 15).toNonIndexed().getAttribute('position').array)
+      for (const place of ['top', 'front'] as const) {
+        const [out] = await runCsg({ op: 'text', solid: box(), options: { text: 'L', font: 'Arial', bold: true, size: 12, depth: 2, place, mode: 'emboss' } })
+        // Area-weighted centre of the faces that stick out of the box, in the face's own right/up axes.
+        let a = 0, sx = 0, sy = 0, lo = [Infinity, Infinity], hi = [-Infinity, -Infinity]
+        for (let o = 0; o < out!.length; o += 9) {
+          const pts = [0, 3, 6].map((k) => [out![o + k]!, out![o + k + 1]!, out![o + k + 2]!])
+          const out1 = pts.every((p) => (place === 'top' ? p[2]! > 30.5 : p[1]! < -15.5))
+          if (!out1) continue
+          const r = pts.map((p) => [p[0]!, place === 'top' ? p[1]! : p[2]!])
+          const ar = Math.abs((r[1]![0]! - r[0]![0]!) * (r[2]![1]! - r[0]![1]!) - (r[2]![0]! - r[0]![0]!) * (r[1]![1]! - r[0]![1]!)) / 2
+          a += ar
+          for (const q of r) {
+            sx += (q[0]! * ar) / 3
+            sy += (q[1]! * ar) / 3
+            lo = [Math.min(lo[0]!, q[0]!), Math.min(lo[1]!, q[1]!)]
+            hi = [Math.max(hi[0]!, q[0]!), Math.max(hi[1]!, q[1]!)]
+          }
+        }
+        const cx = sx / a, cy = sy / a, mx = (lo[0]! + hi[0]!) / 2, my = (lo[1]! + hi[1]!) / 2
+        console.log(`orient ${place}: centroid ${cx.toFixed(2)},${cy.toFixed(2)} box-mid ${mx.toFixed(2)},${my.toFixed(2)} size ${(hi[0]! - lo[0]!).toFixed(1)}x${(hi[1]! - lo[1]!).toFixed(1)} → ${cx < mx && cy < my ? 'reads correctly' : 'WRONG WAY'}`)
+      }
+      return
+    }
     if (editDemo) {
       // A box and a sphere overlapping, as two parts, then one geometry edit.
       const group = new THREE.Group()
@@ -300,14 +327,29 @@ export function installDemo() {
       if (editDemo === 'rebuild') { selectPart(0); await rebuildPart(0.5) }
       if (editDemo === 'fit') await splitToFit({ mode: 'smart', joiner: 'pegs', diameter: 5, clearance: 0.2 })
       if (editDemo === 'fit-grid') await splitToFit({ mode: 'grid', joiner: 'dowels', diameter: 5, clearance: 0.2 })
+      if (editDemo === 'shapes') for (const k of ['box', 'cylinder', 'sphere', 'cone', 'pyramid', 'torus', 'tube'] as const) await addShape(k, 20)
+      if (editDemo === 'text-top') { selectPart(0); await writeTextOnPart({ text: 'BIRDY', font: 'Arial', bold: true, size: 6, depth: 1.5, place: 'top', mode: 'emboss' }) }
+      if (editDemo === 'text-front') { selectPart(0); await writeTextOnPart({ text: 'Hi', font: 'Impact', bold: false, size: 12, depth: 1.5, place: 'front', mode: 'emboss' }) }
+      if (editDemo === 'engrave') { selectPart(0); await writeTextOnPart({ text: 'A1', font: 'Arial', bold: true, size: 14, depth: 2, place: 'top', mode: 'engrave' }) }
+      if (editDemo === 'text-part') { selectPart(0); await writeTextOnPart({ text: 'Birdy\nlabel', font: 'Segoe UI', bold: true, size: 8, depth: 2, place: 'top', mode: 'separate' }) }
+      if (editDemo === 'color') { selectPart(1); setPartColor('#e53935'); selectPart(0); setPartColor('#1e88e5'); console.log(`edit colours: ${ws.parts.map((p) => p.color).join(',')}`) }
+      if (editDemo === 'align') { selectPart(0); alignParts('x', 'min'); alignParts('z', 'min') }
+      if (editDemo === 'history') { await combineParts('union'); await simplifyPart(0.1); await repairActive(); undoEdit() }
       if (editDemo === 'hollow') { await combineParts('union'); await hollowPart(2) }
       await until(() => !ws.working)
       await new Promise((r) => setTimeout(r, 1200))
       await until(() => !!ws.report && !ws.checking)
       say(`${editDemo} (${Math.round(performance.now() - t0)} ms)`)
+      const look = (window as unknown as { __demoLook?: string }).__demoLook
+      if (look) getViewer()?.view(look as never)
+      if (ws.history.length) console.log(`edit history: ${ws.history.map((h) => h.label).join(' > ')}`)
       if (editDemo === 'undo') { await combineParts('union'); undoEdit(); await until(() => !!ws.report && !ws.checking); say('undo') }
       await new Promise((r) => setTimeout(r, 500))
-      document.querySelector('.modify')?.scrollIntoView({ block: 'end' })
+      if (editDemo === 'color' || editDemo === 'align') {
+        ws.sidebarTab = 'model'
+        await new Promise((r) => setTimeout(r, 300))
+        document.querySelector('.plate .colors')?.scrollIntoView({ block: 'center' })
+      } else document.querySelector('.modify')?.scrollIntoView({ block: 'end' })
       return
     }
     const healthDemo = (window as unknown as { __demoHealth?: string }).__demoHealth

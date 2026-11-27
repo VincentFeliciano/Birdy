@@ -90,7 +90,9 @@ export const ws = $state({
   /** Problem picked with Show: only its area is highlighted and the camera zooms to it. */
   markFocus: null as MarkKey | null,
   /** Models on the active tab's plate, and which one the transform tools act on. */
-  parts: [] as { name: string; triangles: number }[],
+  parts: [] as { name: string; triangles: number; color?: string }[],
+  /** The active model's edit and repair history, newest last. */
+  history: [] as { label: string; note: string; at: number }[],
   selPart: 0,
   /** Show only the selected part in the 3D view. */
   isolate: false,
@@ -123,6 +125,8 @@ interface Doc {
   beforeRepair?: { parts: Map<THREE.Group, PartInfo & { children: THREE.Object3D[] }>; warnings: string[] }
   /** The plate's parts before the last edit (merge, cut, simplify…), for Undo. */
   lastEdit?: { label: string; parts: THREE.Group[]; sel: THREE.Group }
+  /** What was done to this model, newest last: repairs and edits. */
+  history: { label: string; note: string; at: number }[]
   fixNote: string | null
 }
 /** What each part wrapper keeps in userData. */
@@ -131,6 +135,8 @@ interface PartInfo {
   initialZ: number
   triangles: number
   meshes: number
+  /** Colour picked for this part (#rrggbb); saved into 3MF files. */
+  color?: string
 }
 const info = (part: THREE.Object3D) => part.userData as PartInfo
 // A copy, so callers can add and remove parts while walking the list.
@@ -199,7 +205,10 @@ function syncParts(doc: Doc | undefined) {
     return
   }
   const parts = partsOf(doc)
-  ws.parts = parts.map((p) => ({ name: info(p).name, triangles: info(p).triangles }))
+  // Picked colours survive repairs and edits that rebuild a part's mesh.
+  for (const p of parts) if (info(p).color) paintPart(p, info(p).color!)
+  ws.parts = parts.map((p) => ({ name: info(p).name, triangles: info(p).triangles, color: info(p).color }))
+  ws.history = [...doc.history]
   ws.selPart = Math.max(0, parts.indexOf(doc.sel))
   doc.triangles = parts.reduce((n, p) => n + info(p).triangles, 0)
   doc.meshes = parts.reduce((n, p) => n + info(p).meshes, 0)
@@ -339,6 +348,7 @@ export async function openModelFile(file: ModelFile) {
     }
     const id = crypto.randomUUID()
     docs.set(id, {
+      history: [],
       wrapper: plate,
       sel: part,
       initialZ,
@@ -560,6 +570,141 @@ function placeOnBed(w: THREE.Group) {
   w.position.z -= box.min.z
 }
 
+function paintPart(part: THREE.Object3D, color: string) {
+  part.traverse((o) => {
+    const m = o as THREE.Mesh
+    if (!m.isMesh) return
+    for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+      const c = (mat as THREE.MeshStandardMaterial).color
+      if (c && '#' + c.getHexString() !== color.toLowerCase()) c.set(color)
+    }
+  })
+}
+
+/** Records an edit or repair in the model's history (shown in the Modify panel). */
+function logHistory(doc: Doc, label: string, note: string) {
+  doc.history.push({ label, note, at: Date.now() })
+  if (doc.history.length > 50) doc.history.shift()
+  if (docs.get(ws.activeId ?? '') === doc) ws.history = [...doc.history]
+}
+
+/** Colours the selected part (null puts the default back). */
+export function setPartColor(color: string | null) {
+  const doc = activeDoc()
+  if (!doc) return
+  const part = doc.sel
+  if (color && !/^#[0-9a-f]{6}$/i.test(color)) return
+  if (color) {
+    // Its own material, so other parts keep theirs.
+    part.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (m.isMesh && !Array.isArray(m.material)) m.material = m.material.clone()
+    })
+    info(part).color = color
+    paintPart(part, color)
+  } else {
+    delete info(part).color
+    part.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (m.isMesh) m.material = defaultMaterial()
+    })
+  }
+  markModified()
+  syncParts(doc)
+  viewer?.changed()
+}
+
+/**
+ * Lines every other part up with the selected one along an axis: its low side, middle or high side.
+ * Z 'min' stands them all on the plate.
+ */
+export function alignParts(axis: 'x' | 'y' | 'z', to: 'min' | 'mid' | 'max') {
+  const doc = activeDoc()
+  if (!doc) return
+  doc.wrapper.updateMatrixWorld(true)
+  const ref = new THREE.Box3().setFromObject(doc.sel, true)
+  const target = to === 'min' ? ref.min[axis] : to === 'max' ? ref.max[axis] : (ref.min[axis] + ref.max[axis]) / 2
+  let moved = 0
+  for (const p of partsOf(doc)) {
+    if (p === doc.sel) continue
+    const b = new THREE.Box3().setFromObject(p, true)
+    const at = to === 'min' ? b.min[axis] : to === 'max' ? b.max[axis] : (b.min[axis] + b.max[axis]) / 2
+    // World and plate axes match (the plate group isn't rotated), so the shift applies directly.
+    p.position[axis] += target - at
+    moved++
+  }
+  if (!moved) return setFixNote('Add another model to the plate to line them up.')
+  afterPlateChange(doc)
+  const side = axis === 'z' ? (to === 'min' ? 'bottoms' : to === 'max' ? 'tops' : 'middles') : to === 'min' ? `${axis.toUpperCase()} low sides` : to === 'max' ? `${axis.toUpperCase()} high sides` : `${axis.toUpperCase()} centres`
+  setFixNote(`Lined up the ${side} of ${moved} model${moved === 1 ? '' : 's'} with the selected one.`)
+}
+
+export type ShapeKind = 'box' | 'cylinder' | 'sphere' | 'cone' | 'torus' | 'pyramid' | 'tube'
+
+/** A basic shape `size` mm across, standing on the plate (beside what's there). */
+export async function addShape(kind: ShapeKind, size: number) {
+  const s = Math.max(1, Math.min(1000, size))
+  let g: THREE.BufferGeometry
+  if (kind === 'box') g = new THREE.BoxGeometry(s, s, s)
+  else if (kind === 'cylinder') g = new THREE.CylinderGeometry(s / 2, s / 2, s, 64).rotateX(Math.PI / 2)
+  else if (kind === 'sphere') g = new THREE.SphereGeometry(s / 2, 64, 32)
+  else if (kind === 'cone') g = new THREE.ConeGeometry(s / 2, s, 64).rotateX(Math.PI / 2)
+  else if (kind === 'pyramid') g = new THREE.ConeGeometry(s / Math.SQRT2, s, 4).rotateY(Math.PI / 4).rotateX(Math.PI / 2)
+  else if (kind === 'torus') g = new THREE.TorusGeometry(s * 0.35, s * 0.15, 32, 96)
+  else {
+    // A tube: a ring cross-section turned around the Z axis.
+    const r = s / 2, wall = Math.max(0.8, s * 0.12)
+    g = new THREE.LatheGeometry([new THREE.Vector2(r - wall, 0), new THREE.Vector2(r, 0), new THREE.Vector2(r, s), new THREE.Vector2(r - wall, s), new THREE.Vector2(r - wall, 0)], 96).rotateX(Math.PI / 2)
+  }
+  const name = kind[0]!.toUpperCase() + kind.slice(1)
+  const tris = new Float32Array((g.index ? g.toNonIndexed() : g).getAttribute('position').array)
+  g.dispose()
+  const doc = activeDoc()
+  if (!doc) {
+    // No model open: the shape becomes a new model of its own.
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(tris, 3))
+    const data = exportModel(new THREE.Mesh(geo), 'stl')
+    geo.dispose()
+    return openModelFile({ name: `${name}.stl`, format: 'stl', size: data.byteLength, data })
+  }
+  const part = partFromTriangles(tris, `${name} ${s} mm`, defaultMaterial())
+  placeBeside(doc, part)
+  doc.wrapper.add(part)
+  doc.sel = part
+  afterPlateChange(doc)
+  logHistory(doc, 'Add shape', `Added a ${s} mm ${kind}.`)
+}
+
+export interface TextRequest {
+  text: string
+  font: string
+  bold: boolean
+  size: number
+  depth: number
+  place: 'top' | 'front'
+  mode: 'emboss' | 'engrave' | 'separate'
+}
+
+/** Raises text from, or cuts it into, the top or front of the selected part; or adds it as its own part. */
+export function writeTextOnPart(req: TextRequest) {
+  const label = req.mode === 'emboss' ? 'Emboss text' : req.mode === 'engrave' ? 'Engrave text' : 'Add text'
+  return edit(label, async (doc) => {
+    const part = doc.sel
+    const [out] = await runCsg({ op: 'text', solid: tris(part), options: req })
+    const quoted = `“${req.text.length > 24 ? req.text.slice(0, 24) + '…' : req.text}”`
+    if (req.mode === 'separate') {
+      const t = partFromTriangles(out!, `Text ${quoted}`, materialOf(part))
+      replaceParts(doc, [], [t], label)
+      placeOnBed(t)
+      afterPlateChange(doc)
+      return `Added ${quoted} as its own part, ${req.depth} mm thick.`
+    }
+    replaceParts(doc, [part], [partFromTriangles(out!, info(part).name, materialOf(part))], label)
+    return `${req.mode === 'emboss' ? 'Raised' : 'Cut'} ${quoted} ${req.depth} mm ${req.mode === 'emboss' ? 'from' : 'into'} the ${req.place} of the model.`
+  })
+}
+
 function setFixNote(text: string | null) {
   const doc = activeDoc()
   if (doc) doc.fixNote = text
@@ -621,6 +766,13 @@ export async function repairActive() {
       notes.length < 2 || notes.every((n) => n === notes[0])
         ? (notes.length > 1 ? `All ${notes.length} models: ` : '') + (notes[0] ?? '')
         : notes.map((n, i) => `${names[i]}: ${n}`).join(' ')
+    logHistory(doc, 'Repair', doc.fixNote || 'Repaired.')
+    // The repair has its own Undo; the edit before it can no longer be undone without losing the repair.
+    if (doc.lastEdit) {
+      for (const p of doc.lastEdit.parts) if (!p.parent) disposeTree(p)
+      doc.lastEdit = undefined
+      if (ws.activeId === id) ws.undoLabel = null
+    }
     if (ws.activeId === id) {
       ws.fixNote = doc.fixNote
       ws.canUndoRepair = true
@@ -652,6 +804,7 @@ export function undoRepair() {
   doc.fixNote = null
   ws.fixNote = null
   ws.canUndoRepair = false
+  logHistory(doc, 'Undo repair', 'Put each model back as it was loaded.')
   afterGeometryChange(doc)
 }
 
@@ -930,6 +1083,7 @@ export function splitIntoParts() {
   doc.sel = made[0]!
   setIsolate(false)
   afterPlateChange(doc)
+  logHistory(doc, 'Split shells', `Split into ${made.length} parts.`)
   setFixNote(`Split into ${made.length} parts, largest first. Remove any you don't want from the plate list.`)
 }
 
@@ -1002,6 +1156,7 @@ export function undoEdit() {
   ws.undoLabel = null
   afterPlateChange(doc)
   setFixNote(`Undid ${label.toLowerCase()}.`)
+  logHistory(doc, 'Undo', `Undid ${label.toLowerCase()}.`)
 }
 
 async function edit(label: string, fn: (doc: Doc) => Promise<string | void>) {
@@ -1011,8 +1166,11 @@ async function edit(label: string, fn: (doc: Doc) => Promise<string | void>) {
   ws.error = null
   await new Promise((r) => setTimeout(r, 20))
   try {
+    const before = doc.lastEdit
     const note = await fn(doc)
     if (note) setFixNote(note)
+    // Only edits that changed the plate go in the history.
+    if (doc.lastEdit !== before) logHistory(doc, doc.lastEdit?.label ?? label, note || label)
   } catch (err) {
     setFixNote(null)
     ws.error = `${label} failed: ${(err as Error).message}`

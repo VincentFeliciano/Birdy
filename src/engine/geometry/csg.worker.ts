@@ -4,6 +4,7 @@ import wasmUrl from 'manifold-3d/manifold.wasm?url'
 import { booleanOp, cutByPlane, simplifySolid, type BooleanOp, type Wasm } from './csg'
 import { rebuildSolid, hollowSolid } from './solidify'
 import { chop, type ChopOptions } from './chop'
+import { writeText, type TextOptions } from './text'
 
 export type CsgRequest =
   | { op: 'boolean'; kind: BooleanOp; solids: Float32Array[]; names: string[] }
@@ -12,6 +13,7 @@ export type CsgRequest =
   | { op: 'rebuild'; solid: Float32Array; voxel: number }
   | { op: 'hollow'; solid: Float32Array; wall: number; voxel: number }
   | { op: 'chop'; solid: Float32Array; options: Partial<ChopOptions> }
+  | { op: 'text'; solid: Float32Array; options: TextOptions }
 
 /** Extra facts about a chop: per piece offset, how many dowels follow the pieces, counts. */
 export interface ChopInfo {
@@ -41,6 +43,7 @@ self.onmessage = async (e: MessageEvent<{ id: number; req: CsgRequest }>) => {
     else if (req.op === 'simplify') result = [simplifySolid(wasm, req.solid, req.tolerance)]
     else if (req.op === 'rebuild') result = [rebuildSolid(wasm, req.solid, req.voxel)]
     else if (req.op === 'hollow') result = [hollowSolid(wasm, req.solid, req.wall, req.voxel)]
+    else if (req.op === 'text') result = [writeText(wasm, req.solid, req.options)]
     else {
       const r = chop(wasm, req.solid, req.options)
       result = [...r.pieces.map((p) => p.tris), ...r.dowels]

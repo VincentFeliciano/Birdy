@@ -360,6 +360,8 @@ function maybeScreenshot() {
       if (process.argv.includes('--demo-formats')) await win.webContents.executeJavaScript('window.__demoFormats = true')
       const explorerDemo = process.argv.find((a) => a.startsWith('--demo-explorer='))?.slice('--demo-explorer='.length)
       if (explorerDemo) await win.webContents.executeJavaScript(`window.__demoExplorer = ${JSON.stringify(explorerDemo)}`)
+      const lookDemo = process.argv.find((a) => a.startsWith('--demo-look='))?.slice('--demo-look='.length)
+      if (lookDemo) await win.webContents.executeJavaScript(`window.__demoLook = ${JSON.stringify(lookDemo)}`)
       const editDemo = process.argv.find((a) => a.startsWith('--demo-edit='))?.slice('--demo-edit='.length)
       if (editDemo) await win.webContents.executeJavaScript(`window.__demoEdit = ${JSON.stringify(editDemo)}`)
       const healthDemo = process.argv.find((a) => a.startsWith('--demo-health='))?.slice('--demo-health='.length)
