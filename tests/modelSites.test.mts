@@ -33,6 +33,17 @@ test('MakerWorld models are recognised', () => {
   assert.equal(modelPage('https://makerworld.com/en/u/someone'), null)
 })
 
+test('Cults3D, MyMiniFactory and Thangs models are recognised', () => {
+  assert.equal(modelPage('https://cults3d.com/en/3d-model/home/articulated-dragon')?.id, 'articulated-dragon')
+  assert.equal(modelPage('https://cults3d.com/fr/modele-3d/maison/vase-spirale')?.site, 'cults3d')
+  assert.equal(modelPage('https://cults3d.com/en/users/someone'), null)
+  assert.equal(modelPage('https://www.myminifactory.com/object/3d-print-baby-dragon-12345')?.id, '12345')
+  assert.equal(modelPage('https://www.myminifactory.com/users/someone'), null)
+  assert.equal(modelPage('https://thangs.com/designer/someone/3d-model/Flexi%20Rex-998877')?.id, '998877')
+  assert.equal(modelPage('https://thangs.com/m/556677')?.site, 'thangs')
+  assert.equal(modelPage('https://thangs.com/search/rex'), null)
+})
+
 test('other sites, look-alikes and plain http are ignored', () => {
   assert.equal(modelPage('https://thingiverse.com.evil.example/thing:1'), null)
   assert.equal(modelPage('http://www.thingiverse.com/thing:1'), null)
