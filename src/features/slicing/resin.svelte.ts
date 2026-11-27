@@ -1,6 +1,7 @@
 import { BIG_PREVIEW, decodeLayer, SMALL_PREVIEW } from '../../engine/resin/goo'
 import { DEFAULT_RESIN, RESIN_PRINTERS, type ResinPrinter, type ResinSettings } from '../../engine/resin/printers'
 import { cancelResin, runResin } from '../../engine/resin/runResin'
+import type { ResinIsland } from '../../engine/resin/slice'
 import { updates } from '../../app/updates.svelte'
 import { activeModel, BED, exportActive, getViewer, setBed, ws } from '../workspace/store.svelte'
 
@@ -29,6 +30,8 @@ export interface ResinResult {
   printer: ResinPrinter
   modelId: string | null
   name: string
+  islands: ResinIsland[]
+  islandCount: number
 }
 
 export const resin = $state({
@@ -45,12 +48,16 @@ export const resin = $state({
   saveError: null as string | null,
   layer: 0,
   layerUrl: null as string | null,
+  /** Island picked in the list (index into result.islands), or -1. */
+  island: -1,
 })
 
 /** The finished file, kept out of reactive state (it can be hundreds of MB). */
 let parts: Uint8Array[] | null = null
 /** Build volume to put back when leaving resin mode. */
 let fdmBed: { x: number; y: number; z: number } | null = null
+/** The model's transform when it was sliced, so island rings follow it in the 3D view. */
+let slicedAt: import('three').Matrix4 | null = null
 
 export function resinPrinter(): ResinPrinter {
   return resin.printerId === 'custom' ? resin.custom : (RESIN_PRINTERS.find((p) => p.id === resin.printerId) ?? RESIN_PRINTERS[0]!)
@@ -115,6 +122,9 @@ export function resetSettings() {
 
 export function clearResult() {
   parts = null
+  slicedAt = null
+  resin.island = -1
+  getViewer()?.setIslands(null, null)
   resin.result = null
   resin.savedPath = null
   resin.saveError = null
@@ -156,6 +166,7 @@ export async function sliceResinModel() {
   resin.progress = 0
   const printer = $state.snapshot(resinPrinter())
   const settings = $state.snapshot(resin.settings)
+  const at = getViewer()?.modelMatrix() ?? null
   try {
     const pv = await previews()
     const out = await runResin(
@@ -180,8 +191,12 @@ export async function sliceResinModel() {
       printer,
       modelId: ws.activeId,
       name: model.name.replace(/\.[^.]+$/, ''),
+      islands: out.islands,
+      islandCount: out.islandCount,
     }
-    showLayer(Math.floor(out.layers / 3))
+    slicedAt = at
+    showIslands()
+    showLayer(out.islands[0]?.layer ?? Math.floor(out.layers / 3))
   } catch (err) {
     const msg = (err as Error).message
     if (msg !== 'canceled') resin.error = msg
@@ -208,6 +223,27 @@ export async function saveResin() {
   } finally {
     resin.saving = false
   }
+}
+
+function showIslands() {
+  const r = resin.result
+  const px = r ? r.printer.sizeX / r.printer.resX : 0
+  getViewer()?.setIslands(
+    r?.islands.map((i) => ({ x: i.x, y: i.y, z: i.z, r: Math.max(i.radiusPx * px, 0.5) })) ?? null,
+    slicedAt,
+    resin.island,
+  )
+}
+
+/** Picks an island from the list: its layer in the preview, and the 3D view zoomed to it. Again to let go. */
+export function pickIsland(i: number) {
+  const r = resin.result
+  if (!r) return
+  resin.island = resin.island === i ? -1 : i
+  showIslands()
+  const isl = r.islands[resin.island]
+  if (isl) showLayer(isl.layer)
+  else showLayer(resin.layer)
 }
 
 /** Draws layer `n` of the sliced file, scaled down, in the neon colour. */
@@ -261,5 +297,16 @@ export function showLayer(n: number) {
     img.data[i * 4 + 3] = 255
   }
   g.putImageData(img, 0, 0)
+  // Ring the islands that start on this layer.
+  g.lineWidth = 2
+  r.islands.forEach((isl, i) => {
+    if (isl.layer !== n) return
+    const picked = i === resin.island
+    g.strokeStyle = picked ? '#ff3df2' : 'rgba(255, 61, 242, 0.75)'
+    g.lineWidth = picked ? 3 : 2
+    g.beginPath()
+    g.arc(isl.col / scale, isl.row / scale, Math.max(6, isl.radiusPx / scale + 5), 0, Math.PI * 2)
+    g.stroke()
+  })
   resin.layerUrl = canvas.toDataURL('image/png')
 }

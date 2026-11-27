@@ -3,7 +3,7 @@ import { importDownloads as importModelsFromDownloads, models as modelsState, op
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
 import { checkNow, focusMark, openModelFile, repairActive, setXForm, ws } from '../features/workspace/store.svelte'
-import { choosePrinter as chooseResinPrinter, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
+import { choosePrinter as chooseResinPrinter, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
 /** Builds a small printable sample (a torus knot, ~70 mm) as a real binary STL and opens it. */
@@ -39,6 +39,21 @@ async function openBrokenSample() {
   geo.dispose()
   g.dispose()
   await openModelFile({ name: 'broken-knot.stl', format: 'stl', size: data.byteLength, data })
+}
+
+/** A post with a shelf and two blocks hanging in the air beside it: resin islands. */
+async function openIslandSample() {
+  const parts = [
+    new THREE.BoxGeometry(8, 8, 30).translate(0, 0, 15),
+    new THREE.BoxGeometry(20, 6, 3).translate(10, 0, 31.5),
+    new THREE.BoxGeometry(6, 6, 6).translate(-18, 0, 20),
+    new THREE.SphereGeometry(4, 32, 16).translate(20, 12, 14),
+  ]
+  const group = new THREE.Group()
+  for (const g of parts) group.add(new THREE.Mesh(g))
+  const data = exportModel(group, 'stl')
+  for (const g of parts) g.dispose()
+  await openModelFile({ name: 'islands-test.stl', format: 'stl', size: data.byteLength, data })
 }
 
 const issueList = () => ws.report?.issues.map((i) => i.code).join(',') ?? 'none'
@@ -79,20 +94,27 @@ export function installDemo() {
       }
       return
     }
-    await openSample()
-    ws.layout = 'split'
     const resinDemo = (window as unknown as { __demoResin?: string }).__demoResin
+    if (resinDemo?.endsWith(':islands')) await openIslandSample()
+    else await openSample()
+    ws.layout = 'split'
     if (resinDemo) {
       ws.layout = 'workspace'
       ws.sidebarTab = 'slice'
       setSliceMode('resin')
-      chooseResinPrinter(resinDemo)
+      chooseResinPrinter(resinDemo.split(':')[0]!)
       const t0 = performance.now()
       await sliceResinModel()
       const r = resin.result
       await new Promise((r) => setTimeout(r, 300))
       const sc = document.querySelector('.sidebar .scroll')
       if (sc) sc.scrollTop = sc.scrollHeight
+      if (resin.result?.islands.length) {
+        pickIsland(0)
+        await new Promise((r) => setTimeout(r, 400))
+        const list = document.querySelector('.islands')
+        list?.scrollIntoView({ block: 'center' })
+      }
       console.log(`resin: ${resin.error ?? `${r?.layers} layers ${((r?.bytes ?? 0) / 1e6).toFixed(1)}MB ${((r?.volumeMm3 ?? 0) / 1000).toFixed(1)}ml ${Math.round(r?.printSeconds ?? 0)}s in ${Math.round(performance.now() - t0)}ms`}`)
       return
     }

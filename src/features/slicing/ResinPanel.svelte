@@ -7,6 +7,7 @@
     cancelResinSlice,
     choosePrinter,
     clearResult,
+    pickIsland,
     resetSettings,
     resin,
     resinPrinter,
@@ -107,6 +108,28 @@
         <div><span class="k">Weight</span><span class="v mono">{r.weightG.toFixed(1)} g</span></div>
         <div><span class="k">Layers</span><span class="v mono">{r.layers}</span></div>
       </div>
+      {#if r.islandCount}
+        <div class="islands">
+          <p class="warn-line">
+            <Icon name="alert" size={14} />
+            <span><b>{r.islandCount} island{r.islandCount === 1 ? '' : 's'}</b>: spots that start in mid-air with nothing under them. They stick to the film or float in the vat. Add a support under each.</span>
+          </p>
+          <ul>
+            {#each r.islands.slice(0, 60) as isl, i}
+              <li>
+                <button class:on={resin.island === i} onclick={() => pickIsland(i)} title="Show this island">
+                  <span class="mono">Layer {isl.layer + 1}</span>
+                  <span class="mono dim2">{isl.z.toFixed(2)} mm up · {isl.areaMm2 < 0.1 ? isl.areaMm2.toFixed(3) : isl.areaMm2.toFixed(1)} mm²</span>
+                  <Icon name="target" size={12} />
+                </button>
+              </li>
+            {/each}
+          </ul>
+          {#if r.islandCount > 60}<p class="hint small">Showing the first 60.</p>{/if}
+        </div>
+      {:else}
+        <p class="ok">No islands: every part grows from the layer below.</p>
+      {/if}
       {#if resin.layerUrl}
         <div class="layer">
           <img src={resin.layerUrl} alt="Layer {resin.layer + 1}" />
@@ -320,6 +343,65 @@
   .stats .v {
     font-size: 14px;
     color: var(--text);
+  }
+  .islands {
+    margin-top: 10px;
+    padding: 8px;
+    border-radius: var(--r-md);
+    border: 1px solid rgba(255, 61, 242, 0.45);
+    background: rgba(255, 61, 242, 0.06);
+  }
+  .warn-line {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 6px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+  .warn-line :global(svg) {
+    flex: none;
+    margin-top: 1px;
+    color: #ff3df2;
+  }
+  .warn-line b {
+    color: var(--text);
+  }
+  .islands ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 150px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .islands li button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .islands li button:hover,
+  .islands li button.on {
+    background: rgba(255, 61, 242, 0.14);
+  }
+  .islands li button.on {
+    box-shadow: inset 0 0 0 1px rgba(255, 61, 242, 0.6);
+  }
+  .dim2 {
+    flex: 1;
+    color: var(--faint);
   }
   .layer {
     margin-top: 10px;

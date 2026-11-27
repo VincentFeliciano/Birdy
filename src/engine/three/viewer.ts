@@ -137,6 +137,11 @@ export class Viewer {
   private markAtInv = new THREE.Matrix4()
   private markPulse: { mat: THREE.Material & { opacity: number }; base: number }[] = []
   private markFocused = false
+  /** Resin islands: rings in slice space, carried along with the model like the problem marks. */
+  private islands = new THREE.Group()
+  private islandCenters: THREE.Vector3[] = []
+  private islandAtInv = new THREE.Matrix4()
+  private islandFocus = -1
 
   /** Fired while dragging the gizmo (`live`) and once when a drag ends. */
   onTransform: ((live: boolean) => void) | null = null
@@ -183,7 +188,7 @@ export class Viewer {
     })
     this.scene.add(this.gizmo.getHelper())
     this.marks.matrixAutoUpdate = false
-    this.scene.add(this.marks, this.rings)
+    this.scene.add(this.marks, this.rings, this.islands)
 
     // Neon glow: only colours pushed above 1.0 (the HDR neon lines) bloom; the model does not.
     this.composer = new EffectComposer(this.renderer)
@@ -287,6 +292,7 @@ export class Viewer {
     this.raf = requestAnimationFrame(this.loop)
     this.controls.update()
     this.updateMarks()
+    this.updateIslands()
     this.composer.render()
   }
 
@@ -400,6 +406,53 @@ export class Viewer {
     }
   }
 
+  private updateIslands() {
+    const show = !!this.model?.visible && this.islandCenters.length > 0
+    this.islands.visible = show
+    if (!show || !this.model) return
+    const m = new THREE.Matrix4().multiplyMatrices(this.model.matrixWorld, this.islandAtInv)
+    const wave = 0.5 + 0.5 * Math.sin((performance.now() / 1000) * 4)
+    this.islands.children.forEach((o, i) => {
+      const sprite = o as THREE.Sprite
+      sprite.position.copy(this.islandCenters[i]!).applyMatrix4(m)
+      const focused = i === this.islandFocus
+      sprite.scale.setScalar(focused ? 0.06 * (1 + 0.35 * wave) : 0.035)
+      sprite.material.opacity = this.islandFocus < 0 || focused ? 0.6 + 0.4 * wave : 0.35
+    })
+  }
+
+  /**
+   * Rings where a resin slice found islands (spots that start in mid-air). `at` is the model's
+   * transform when it was sliced. With `focus`, that island pulses and the camera frames it.
+   */
+  setIslands(points: { x: number; y: number; z: number; r: number }[] | null, at: THREE.Matrix4 | null, focus = -1) {
+    for (const child of [...this.islands.children]) {
+      this.islands.remove(child)
+      ;((child as THREE.Sprite).material as THREE.Material).dispose()
+    }
+    this.islandCenters = []
+    this.islandFocus = focus
+    if (!points?.length || !at) return
+    this.islandAtInv.copy(at).invert()
+    const color = new THREE.Color('#ff3df2').multiplyScalar(2.5)
+    for (const p of points) {
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: getRingTexture(), color, sizeAttenuation: false, depthTest: false, transparent: true, toneMapped: false }),
+      )
+      sprite.renderOrder = 13
+      this.islands.add(sprite)
+      this.islandCenters.push(new THREE.Vector3(p.x, p.y, p.z))
+    }
+    this.updateIslands()
+    const f = points[focus]
+    if (f && this.model) {
+      const m = new THREE.Matrix4().multiplyMatrices(this.model.matrixWorld, this.islandAtInv)
+      const c = new THREE.Vector3(f.x, f.y, f.z).applyMatrix4(m)
+      // Islands hang from nothing: look at them from below, where the problem shows.
+      this.frame(new THREE.Vector3(1, -1.25, -0.6).normalize(), new THREE.Sphere(c, Math.max(f.r * 4, 14)))
+    }
+  }
+
   private addRing(center: THREE.Vector3, color: THREE.Color) {
     const mat = new THREE.SpriteMaterial({
       map: getRingTexture(),
@@ -429,6 +482,12 @@ export class Viewer {
     this.ringCenters = []
     this.markPulse = []
     this.markFocused = false
+  }
+
+  /** The shown model's current world transform. */
+  modelMatrix() {
+    this.model?.updateMatrixWorld(true)
+    return this.model ? this.model.matrixWorld.clone() : null
   }
 
   setModel(model: THREE.Object3D | null) {
@@ -665,6 +724,7 @@ export class Viewer {
   dispose() {
     this.setPreview(null, () => '#fff')
     this.clearMarks()
+    this.setIslands(null, null)
     cancelAnimationFrame(this.raf)
     this.ro.disconnect()
     this.gizmo.dispose()

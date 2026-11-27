@@ -14,6 +14,25 @@ export interface ResinJob {
   bigPreview?: Uint8ClampedArray
 }
 
+/** A spot that starts in mid-air: lit in its layer with nothing lit under it in the layer before. */
+export interface ResinIsland {
+  /** 0-based layer where it starts. */
+  layer: number
+  /** Centre in the model's coordinates as sliced (mm). */
+  x: number
+  y: number
+  z: number
+  areaMm2: number
+  /** Centre and radius in layer-image pixels, for the layer preview. */
+  col: number
+  row: number
+  radiusPx: number
+}
+
+/** Islands smaller than this many pixels are sampling noise, not real features. */
+const MIN_ISLAND_PX = 3
+const MAX_ISLANDS = 1000
+
 export interface ResinOutput {
   /** The .goo file in pieces: header, one record per layer, ending. */
   parts: Uint8Array[]
@@ -24,6 +43,9 @@ export interface ResinOutput {
   bytes: number
   /** Model size as sliced (mm). */
   size: { x: number; y: number; z: number }
+  /** Unsupported islands, at most MAX_ISLANDS of them; `islandCount` has the full count. */
+  islands: ResinIsland[]
+  islandCount: number
 }
 
 export class ResinFitError extends Error {}
@@ -93,6 +115,13 @@ export function sliceResin(job: ResinJob, progress?: (done: number) => boolean |
   const rowCount = new Int32Array(pr.resY + 1)
   let xs = new Float64Array(4096)
   let ws = new Int8Array(4096)
+  // Lit pixel spans (binary, by pixel centre) of this layer and the one below, for island checks.
+  let cur = new SpanSet(pr.resY)
+  let prev = new SpanSet(pr.resY)
+  const islands: ResinIsland[] = []
+  let islandCount = 0
+  const toX = s.mirror ? (c: number) => (pr.resX - c) * pxW + cx - pr.sizeX / 2 : (c: number) => c * pxW + cx - pr.sizeX / 2
+  const toY = (r: number) => cy + pr.sizeY / 2 - r * pxH
 
   for (let l = 0; l < layerCount; l++) {
     const z = (l + 0.5) * h
@@ -170,7 +199,9 @@ export function sliceResin(job: ResinJob, progress?: (done: number) => boolean |
     //    (a model and its supports) merge instead of cancelling out.
     const enc = new LayerEncoder()
     const emit = rowEmitter(enc, pr.resX, s.antialias)
+    cur.reset()
     for (let r = 0; r < pr.resY; r++) {
+      cur.startRow(r)
       const a = rowCount[r]!
       const b = rowCount[r + 1]!
       if (b > a) {
@@ -181,11 +212,34 @@ export function sliceResin(job: ResinJob, progress?: (done: number) => boolean |
           const was = wind
           wind += ws[i]!
           if (was === 0 && wind !== 0) start = xs[i]!
-          else if (was !== 0 && wind === 0) emit.span(start, xs[i]!)
+          else if (was !== 0 && wind === 0) {
+            emit.span(start, xs[i]!)
+            cur.add(Math.max(0, Math.ceil(start - 0.5)), Math.min(pr.resX, Math.ceil(xs[i]! - 0.5)))
+          }
         }
       }
       emit.endRow()
     }
+    cur.endLayer()
+    if (l > 0) {
+      for (const g of findIslands(cur, prev)) {
+        if (g.pixels < MIN_ISLAND_PX) continue
+        islandCount++
+        if (islands.length >= MAX_ISLANDS) continue
+        const area = g.pixels * pxW * pxH
+        islands.push({
+          layer: l,
+          x: toX(g.col),
+          y: toY(g.row),
+          z: minZ + (l + 0.5) * h,
+          areaMm2: area,
+          col: g.col,
+          row: g.row,
+          radiusPx: Math.max(g.halfW, g.halfH),
+        })
+      }
+    }
+    ;[cur, prev] = [prev, cur]
     const image = enc.finish()
     litPixels += enc.lit
     const record = layerRecord(s, { z: (l + 1) * h, exposure: l < s.bottomLayers ? s.bottomExposure : s.exposure, bottom: l < s.bottomLayers }, image)
@@ -212,7 +266,131 @@ export function sliceResin(job: ResinJob, progress?: (done: number) => boolean |
   parts[0] = gooHeader(info)
   parts.push(GOO_ENDING)
   bytes += parts[0].length + GOO_ENDING.length
-  return { parts, layers: layerCount, printSeconds, volumeMm3, weightG, bytes, size }
+  return { parts, layers: layerCount, printSeconds, volumeMm3, weightG, bytes, size, islands, islandCount }
+}
+
+/** Lit pixel spans of one layer, [a, b) per row, rows in order. */
+class SpanSet {
+  a = new Int32Array(1024)
+  b = new Int32Array(1024)
+  n = 0
+  /** rowStart[r]..rowStart[r+1] are row r's spans. */
+  rowStart: Int32Array
+  private row = -1
+  private rows: number
+  constructor(rows: number) {
+    this.rows = rows
+    this.rowStart = new Int32Array(rows + 1)
+  }
+  reset() {
+    this.n = 0
+    this.row = -1
+  }
+  startRow(r: number) {
+    while (this.row < r) this.rowStart[++this.row] = this.n
+  }
+  add(a: number, b: number) {
+    if (b <= a) return
+    // Spans arrive in order; join one that touches the last.
+    if (this.n > this.rowStart[this.row]! && this.b[this.n - 1]! >= a) {
+      if (b > this.b[this.n - 1]!) this.b[this.n - 1] = b
+      return
+    }
+    if (this.n === this.a.length) {
+      const na = new Int32Array(this.n * 2)
+      na.set(this.a)
+      this.a = na
+      const nb = new Int32Array(this.n * 2)
+      nb.set(this.b)
+      this.b = nb
+    }
+    this.a[this.n] = a
+    this.b[this.n] = b
+    this.n++
+  }
+  endLayer() {
+    this.startRow(this.rows)
+  }
+}
+
+interface SpanGroup {
+  pixels: number
+  col: number
+  row: number
+  halfW: number
+  halfH: number
+}
+
+/**
+ * Groups the layer's spans into connected regions (8-neighbour) and returns the ones that touch
+ * nothing lit in the layer below.
+ */
+export function findIslands(cur: SpanSet, prev: SpanSet): SpanGroup[] {
+  const n = cur.n
+  if (!n) return []
+  const parent = new Int32Array(n)
+  for (let i = 0; i < n; i++) parent[i] = i
+  const find = (i: number) => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]!]!
+      i = parent[i]!
+    }
+    return i
+  }
+  const rows = cur.rowStart.length - 1
+  // Join spans in neighbouring rows that touch, including diagonally.
+  for (let r = 1; r < rows; r++) {
+    let i = cur.rowStart[r - 1]!
+    const iEnd = cur.rowStart[r]!
+    let j = cur.rowStart[r]!
+    const jEnd = cur.rowStart[r + 1]!
+    while (i < iEnd && j < jEnd) {
+      if (cur.a[i]! <= cur.b[j]! && cur.a[j]! <= cur.b[i]!) {
+        const ri = find(i), rj = find(j)
+        if (ri !== rj) parent[ri] = rj
+      }
+      if (cur.b[i]! < cur.b[j]!) i++
+      else j++
+    }
+  }
+  // A region is held up if any of its pixels sits on a lit pixel of the layer below.
+  const held = new Uint8Array(n)
+  for (let r = 0; r < rows; r++) {
+    let i = cur.rowStart[r]!
+    const iEnd = cur.rowStart[r + 1]!
+    let j = prev.rowStart[r]!
+    const jEnd = prev.rowStart[r + 1]!
+    while (i < iEnd && j < jEnd) {
+      if (cur.a[i]! < prev.b[j]! && prev.a[j]! < cur.b[i]!) held[i] = 1
+      if (cur.b[i]! < prev.b[j]!) i++
+      else j++
+    }
+  }
+  for (let i = 0; i < n; i++) if (held[i]) held[find(i)] = 1
+  const groups = new Map<number, { px: number; sc: number; sr: number; c0: number; c1: number; r0: number; r1: number }>()
+  for (let r = 0; r < rows; r++) {
+    for (let i = cur.rowStart[r]!; i < cur.rowStart[r + 1]!; i++) {
+      const root = find(i)
+      if (held[root]) continue
+      const a = cur.a[i]!, b = cur.b[i]!
+      const len = b - a
+      let g = groups.get(root)
+      if (!g) groups.set(root, (g = { px: 0, sc: 0, sr: 0, c0: a, c1: b, r0: r, r1: r + 1 }))
+      g.px += len
+      g.sc += (len * (a + b)) / 2
+      g.sr += len * (r + 0.5)
+      if (a < g.c0) g.c0 = a
+      if (b > g.c1) g.c1 = b
+      g.r1 = r + 1
+    }
+  }
+  return [...groups.values()].map((g) => ({
+    pixels: g.px,
+    col: g.sc / g.px,
+    row: g.sr / g.px,
+    halfW: (g.c1 - g.c0) / 2,
+    halfH: (g.r1 - g.r0) / 2,
+  }))
 }
 
 /** Sorts xs[a..b) ascending, carrying ws along. */

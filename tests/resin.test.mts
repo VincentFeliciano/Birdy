@@ -1,6 +1,6 @@
 // Run with: node tests/resin.test.mts
 import assert from 'node:assert/strict'
-import { BoxGeometry, CylinderGeometry, TorusKnotGeometry } from 'three'
+import { BoxGeometry, CylinderGeometry, TorusGeometry, TorusKnotGeometry } from 'three'
 import { checksum, decodeLayer, GOO_HEADER_SIZE, LayerEncoder, readLayers } from '../src/engine/resin/goo.ts'
 import { DEFAULT_RESIN, RESIN_PRINTERS, type ResinPrinter } from '../src/engine/resin/printers.ts'
 import { ResinFitError, sliceResin } from '../src/engine/resin/slice.ts'
@@ -21,7 +21,7 @@ function test(name: string, fn: () => void) {
 const tiny: ResinPrinter = { id: 't', name: 'Test', resX: 400, resY: 200, sizeX: 40, sizeY: 20, sizeZ: 50 }
 const binary = { ...DEFAULT_RESIN, layerHeight: 0.1, antialias: false }
 
-function geo(g: BoxGeometry | CylinderGeometry | TorusKnotGeometry, offset: [number, number, number] = [0, 0, 0]) {
+function geo(g: BoxGeometry | CylinderGeometry | TorusGeometry | TorusKnotGeometry, offset: [number, number, number] = [0, 0, 0]) {
   const n = g.toNonIndexed()
   n.translate(...offset)
   return new Float32Array(n.getAttribute('position').array)
@@ -167,6 +167,42 @@ test('models that do not fit are refused with a helpful note', () => {
     (e: Error) => e instanceof ResinFitError && /Turning it 90°/.test(e.message),
   )
   assert.throws(() => sliceResin({ positions: geo(new BoxGeometry(5, 5, 60)), printer: tiny, settings: binary, softwareVersion: 't' }), ResinFitError)
+})
+
+test('a block floating above a pillar is one island at the layer it starts', () => {
+  const pillar = geo(new BoxGeometry(4, 4, 10), [-8, 0, 5])
+  const floating = geo(new BoxGeometry(4, 4, 4), [8, 0, 8])
+  const r = sliceResin({ positions: concat(pillar, floating), printer: tiny, settings: binary, softwareVersion: 't' })
+  assert.equal(r.islandCount, 1)
+  const isl = r.islands[0]!
+  assert.equal(isl.layer, 60)
+  assert.ok(Math.abs(isl.x - 8) < 0.1 && Math.abs(isl.y) < 0.1, `at ${isl.x},${isl.y}`)
+  assert.ok(Math.abs(isl.z - 6.05) < 0.06, `z ${isl.z}`)
+  assert.ok(Math.abs(isl.areaMm2 - 16) < 0.5, `area ${isl.areaMm2}`)
+})
+
+test('overhangs, arches and a T shape are not islands', () => {
+  const stem = geo(new BoxGeometry(2, 2, 8), [0, 0, 4])
+  const bar = geo(new BoxGeometry(16, 2, 2), [0, 0, 9])
+  const t = sliceResin({ positions: concat(stem, bar), printer: tiny, settings: binary, softwareVersion: 't' })
+  assert.equal(t.islandCount, 0)
+  const ring = geo(new TorusGeometry(6, 1.5, 24, 96).rotateX(Math.PI / 2))
+  const k = sliceResin({ positions: ring, printer: tiny, settings: binary, softwareVersion: 't' })
+  assert.equal(k.islandCount, 0, 'an upright ring is an arch, held up from below')
+  // Upside-down bowl rim: a ring lying flat on top of a thin post starts mid-air on both sides.
+  const post = geo(new BoxGeometry(1, 1, 6), [0, 0, 3])
+  const flat = geo(new TorusGeometry(6, 1, 16, 96), [0, 0, 7])
+  const f = sliceResin({ positions: concat(post, flat), printer: tiny, settings: binary, softwareVersion: 't' })
+  assert.equal(f.islandCount, 1, 'a flat ring above a post is one island')
+})
+
+test('two floating parts in the same layer are two islands', () => {
+  const base = geo(new BoxGeometry(2, 2, 2), [0, 0, 1])
+  const a = geo(new BoxGeometry(3, 3, 3), [-10, 0, 6])
+  const b = geo(new BoxGeometry(3, 3, 3), [10, 0, 6])
+  const r = sliceResin({ positions: concat(base, a, b), printer: tiny, settings: binary, softwareVersion: 't' })
+  assert.equal(r.islandCount, 2)
+  assert.deepEqual(r.islands.map((i) => i.layer), [45, 45])
 })
 
 test('a 12K knot slices in reasonable time', () => {
