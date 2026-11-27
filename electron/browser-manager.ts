@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildSearchUrl, isSearchType, type Rect, type SearchType, type TabInfo, type TabsState } from '../src/types/ipc'
 import { isWebUrl } from './security'
+import { followSignInUserAgent } from './user-agent'
 
 interface Tab {
   id: number
@@ -111,6 +112,7 @@ export class BrowserManager {
     wc.on('did-start-navigation', (details) => {
       if (details.isMainFrame && !details.isSameDocument) tab.favicon = null
     })
+    followSignInUserAgent(wc, this.opts.session.getUserAgent())
     for (const ev of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page'] as const) {
       wc.on(ev as 'did-stop-loading', () => this.emit())
     }

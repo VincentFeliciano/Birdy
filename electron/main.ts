@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isSearchType, type NewBookmark, type NewLibraryModel, type SaveRequest, type SlicerHandoff } from '../src/types/ipc'
 import { BrowserManager } from './browser-manager'
+import { installSignInHeaders } from './user-agent'
 import { Library } from './library'
 import { chooseSlicer, listSlicers, openInSlicer, setDefaultSlicer } from './slicer-launcher'
 import { DownloadManager } from './download-manager'
@@ -78,6 +79,7 @@ function createWindow() {
       .replace(/\s?Electron\/\S+/, '')
       .replace(new RegExp(`\\s?(${app.getName()}|birdy)\\/\\S+`, 'i'), ''),
   )
+  installSignInHeaders(browserSession)
   // Websites get no device permissions in the MVP except fullscreen and clipboard writes.
   browserSession.setPermissionRequestHandler((_wc, permission, cb) => {
     cb(permission === 'fullscreen' || permission === 'clipboard-sanitized-write')
@@ -281,6 +283,15 @@ function maybeScreenshot() {
       if (view) {
         await win.webContents.executeJavaScript(`window.__setLayout?.(${JSON.stringify(view)})`)
         await new Promise((r) => setTimeout(r, 800))
+      }
+      const probe = process.argv.find((a) => a.startsWith('--probe-url='))?.slice('--probe-url='.length)
+      const probeTab = browser?.active?.view.webContents
+      if (probe && probeTab) {
+        for (const u of probe.split(',')) {
+          await probeTab.loadURL(u).catch(() => {})
+          const seen = await probeTab.executeJavaScript('JSON.stringify({ host: location.host, ua: navigator.userAgent, brands: navigator.userAgentData?.brands?.map((b) => b.brand) ?? null })')
+          console.log('[probe]', seen)
+        }
       }
       console.log('[state]', await win.webContents.executeJavaScript('document.querySelector(".main")?.dataset.layout + " | models=" + document.querySelectorAll(".mtab").length + " | visible=" + document.visibilityState'))
       const img = await win.webContents.capturePage()
