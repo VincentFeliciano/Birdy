@@ -1,15 +1,15 @@
 <script lang="ts">
-  import logoUrl from '../assets/birdy-logo.png'
+  import logoUrl from '../assets/boaty-logo.png'
 
-  /** Height in px; the bird is a little wider than tall. */
+  /** Height in px; the boat is a little wider than tall. */
   let { size = 22, glow = 1 }: { size?: number; glow?: number } = $props()
 </script>
 
 <!--
-  Birdy mark: the bird silhouette lit in the live neon colour. The glow sits on the outer element
+  Boaty mark: the tug boat silhouette lit in the live neon colour. The glow sits on the outer element
   because CSS applies filters before masks, so a filter on the masked element would be cut off.
 -->
-<span class="logo" style="--h: {size}px; --g: {glow}" role="img" aria-label="Birdy">
+<span class="logo" style="--h: {size}px; --g: {glow}" role="img" aria-label="Boaty">
   <span class="bird" style="--mask: url({logoUrl})"></span>
 </span>
 
@@ -18,7 +18,7 @@
     display: inline-block;
     flex: none;
     height: var(--h);
-    aspect-ratio: 512 / 453;
+    aspect-ratio: 512 / 458;
     filter: drop-shadow(0 0 calc(2px * var(--g)) rgba(var(--accent-rgb), 0.95))
       drop-shadow(0 0 calc(7px * var(--g)) rgba(var(--accent-rgb), 0.55))
       drop-shadow(0 0 calc(16px * var(--g)) rgba(var(--accent-rgb), 0.25));

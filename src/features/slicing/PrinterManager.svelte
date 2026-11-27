@@ -10,7 +10,7 @@
     { id: 'moonraker', label: 'Klipper (Moonraker)', hint: 'Address of Mainsail or Fluidd (e.g. 192.168.1.50). An API key is only needed if you turned one on.' },
     { id: 'prusalink', label: 'PrusaLink', hint: 'Printer address. Use the username and password shown on the printer, or an API key on older firmware.' },
     { id: 'elegoo', label: 'Elegoo resin (Wi-Fi)', hint: 'Address shown on the printer’s screen (Settings → Network), e.g. 192.168.1.60. For Saturn 4 / Mars 5 series and other printers with Elegoo’s SDCP V3 network protocol; no key needed.' },
-    { id: 'serial', label: 'USB cable', hint: 'Marlin-compatible printers connected to this PC. Birdy streams the G-code; keep it open while printing.' },
+    { id: 'serial', label: 'USB cable', hint: 'Marlin-compatible printers connected to this PC. Boaty streams the G-code; keep it open while printing.' },
   ]
   const bauds = [115200, 250000, 57600, 230400, 500000, 38400, 19200, 9600]
 

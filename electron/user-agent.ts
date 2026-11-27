@@ -3,15 +3,15 @@ import type { Session, WebContents } from 'electron'
 /**
  * Google refuses sign-in from browsers built on Electron ("This browser or app may not be secure").
  * Its check looks past the user agent string at Chromium's brand hints, which say "Chromium" but
- * not "Google Chrome". On Google's sign-in host only, Birdy presents as Firefox, which sends no
- * brand hints, the same approach other Electron-based browsers use. Every other site sees Birdy's
+ * not "Google Chrome". On Google's sign-in host only, Boaty presents as Firefox, which sends no
+ * brand hints, the same approach other Electron-based browsers use. Every other site sees Boaty's
  * normal Chromium identity.
  */
 export const SIGN_IN_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0'
 
-/** Electron's user agent without the "Electron/x" and "Birdy/x" (app name) tokens: plain Chromium. */
+/** Electron's user agent without the "Electron/x" and app-name (Boaty/x, or Birdy/x before the rename) tokens: plain Chromium. */
 export function plainChromeUserAgent(ua: string): string {
-  return ua.replace(/\s?(Electron|Birdy|birdy)\/\S+/g, '')
+  return ua.replace(/\s?(Electron|Birdy|birdy|Boaty|boaty)\/\S+/g, '')
 }
 
 const SIGN_IN_HOSTS =new Set(['accounts.google.com'])

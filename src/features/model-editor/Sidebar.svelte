@@ -20,7 +20,9 @@
     convertUnits,
     fitToBed,
     focusMark,
+    ignoreIssue,
     repairActive,
+    unignoreIssues,
     undoRepair,
     saveToLibrary,
     sendToSlicer,
@@ -128,7 +130,9 @@
                 {#if ws.canUndoRepair}<button class="link" onclick={undoRepair}>Undo repair</button>{/if}
               </div>
             {/if}
-            {#if report.issues.length === 0}
+            {#if report.issues.length === 0 && ws.ignoredIssues.length}
+              <p class="hint">No other problems found.</p>
+            {:else if report.issues.length === 0}
               <p class="hint">Watertight, fits the {BED.x} × {BED.y} × {BED.z} mm plate, sits flat, no problem overhangs.</p>
             {:else}
               <ul class="issues">
@@ -169,6 +173,7 @@
                             <button class="ghost sm" onclick={() => supportsFor(i)}><Icon name="layers" size={12} />Turn on supports</button>
                           {/if}
                         {/if}
+                        <button class="ghost sm ignore" title="Hide this for this model; it no longer counts toward the verdict" onclick={() => ignoreIssue(i.code)}>Ignore</button>
                       </div>
                     </div>
                   </li>
@@ -177,6 +182,12 @@
               {#if !ws.markFocus && report.issues.some((i) => i.mark && ['holes', 'nonmanifold', 'flipped', 'degenerate'].includes(i.code))}
                 <p class="hint marked">Mesh problems are lit up on the model. Use Show to zoom to one.</p>
               {/if}
+            {/if}
+            {#if ws.ignoredIssues.length}
+              <p class="hint ignored">
+                Ignoring: {ws.ignoredIssues.map((i) => i.title).join(', ')}.
+                <button class="link" onclick={unignoreIssues}>Show again</button>
+              </p>
             {/if}
             <dl class="checkstats">
               <dt>Watertight</dt>
@@ -637,6 +648,14 @@
   }
   .fixes:empty {
     display: none;
+  }
+  .fixes .ignore {
+    margin-left: auto;
+    color: var(--faint);
+  }
+  .hint.ignored {
+    font-size: 11px;
+    color: var(--faint);
   }
   .ghost.sm {
     height: 24px;

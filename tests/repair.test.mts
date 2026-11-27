@@ -169,4 +169,65 @@ test('reports touching parts it cannot separate', () => {
   assert.match(describeRepair(r.summary), /more than two faces/)
 })
 
+test('closes T-junction cracks (a corner sitting on a neighbour edge)', () => {
+  const h = 10
+  const c = cube(20, [0, 0, 0])
+  const top: number[] = []
+  for (let t = 0; t < tris(c); t++) if ([2, 5, 8].every((k) => Math.abs(c[t * 9 + k]! - h) < 1e-6)) top.push(t)
+  assert.equal(top.length, 2)
+  // Re-cut the top with an extra corner M on its front edge; the front wall knows nothing of M.
+  const A = [-h, -h, h], B = [h, -h, h], C = [h, h, h], D = [-h, h, h], M = [0, -h, h]
+  const p = new Float32Array([...without(c, top), ...A, ...M, ...D, ...M, ...B, ...C, ...M, ...C, ...D])
+  assert.ok(check(p).stats.openEdges > 0)
+  const { positions, summary } = repairMesh(p)
+  assert.ok(summary.tJunctionsClosed >= 1)
+  const after = check(positions)
+  assert.equal(after.stats.openEdges, 0)
+  assert.equal(after.stats.watertight, true)
+  assert.ok(Math.abs(after.stats.volumeCm3! - 8) < 1e-3)
+  assert.match(describeRepair(summary), /crack/)
+})
+
+test('closes cracks whose corners just miss each other', () => {
+  const c = cube()
+  // Nudge one corner of one triangle by 0.004 mm: past the weld, so two open edges appear.
+  const p = c.slice()
+  p[0] = p[0]! + 0.004
+  assert.ok(check(p).stats.openEdges > 0)
+  const after = check(repairMesh(p).positions)
+  assert.equal(after.stats.watertight, true)
+})
+
+test('removes the hidden wall where two parts meet face to face', () => {
+  const lower = cube(20, [0, 0, 10])
+  const up = cube(20, [0, 0, 30])
+  const at = (q: Float32Array, z: number) => {
+    const out: number[] = []
+    for (let t = 0; t < tris(q); t++) if ([2, 5, 8].every((k) => Math.abs(q[t * 9 + k]! - z) < 1e-6)) out.push(t)
+    return out
+  }
+  // The lower cube's top is split along one diagonal; split the upper cube's bottom along the other.
+  const topTri = at(lower, 20)[0]!
+  const hasAC = [0, 3, 6].some((o) => lower[topTri * 9 + o] === -10 && lower[topTri * 9 + o + 1] === -10) &&
+    [0, 3, 6].some((o) => lower[topTri * 9 + o] === 10 && lower[topTri * 9 + o + 1] === 10)
+  const A = [-10, -10, 20], B = [10, -10, 20], C = [10, 10, 20], D = [-10, 10, 20]
+  const bottom = hasAC ? [...A, ...D, ...B, ...B, ...D, ...C] : [...A, ...C, ...B, ...A, ...D, ...C]
+  const p = new Float32Array([...lower, ...without(up, at(up, 20)), ...bottom])
+  assert.ok(check(p).stats.nonManifoldEdges > 0)
+  const { positions, summary } = repairMesh(p)
+  assert.equal(summary.internalWalls, 1)
+  const after = check(positions)
+  assert.equal(after.stats.watertight, true)
+  assert.equal(after.stats.components, 1)
+  assert.ok(Math.abs(after.stats.volumeCm3! - 16) < 1e-3)
+})
+
+test('leaves parts that only touch along an edge alone', () => {
+  // Two cubes sharing just one edge: nothing coplanar to remove.
+  const p = new Float32Array([...cube(20, [0, 0, 10]), ...cube(20, [20, 0, 30])])
+  const { positions, summary } = repairMesh(p)
+  assert.equal(summary.internalWalls, 0)
+  assert.equal(tris(positions), 24)
+})
+
 console.log(`\n${passed} repair tests passed`)

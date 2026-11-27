@@ -31,7 +31,7 @@
   let shape = $state<ShapeKind>('box')
   let shapeSize = $state(20)
   let textOpen = $state(false)
-  let text = $state('Birdy')
+  let text = $state('Boaty')
   let font = $state('Arial')
   let bold = $state(true)
   let textSize = $state(8)

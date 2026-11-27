@@ -1,4 +1,4 @@
-// Printers the engine's own profiles don't include, shipped with Birdy as user presets.
+// Printers the engine's own profiles don't include, shipped with Boaty as user presets.
 // Each one inherits the engine's closest relative and changes only what differs.
 import type { PresetKind } from '../../src/types/slicing'
 import { BED_TEMP_KEYS, customPreset } from './presets'

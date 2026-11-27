@@ -1,4 +1,4 @@
-// Slicing with Birdy's own supports: add them, slice, and when a drain hole lands on pins, move
+// Slicing with Boaty's own supports: add them, slice, and when a drain hole lands on pins, move
 // those pins to a ring around the hole and slice again with the hole where it was.
 
 import { sliceResin, type ResinJob, type ResinOutput } from './slice.ts'

@@ -208,12 +208,12 @@ export function gooHeader(h: HeaderInfo) {
   const d = h.date
   w.str('V3.0', 4)
   w.bytes(MAGIC)
-  w.str('Birdy', 32)
+  w.str('Boaty', 32)
   w.str(h.softwareVersion, 24)
   w.str(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`, 24)
   w.str(p.name, 32)
   w.str('MSLA', 32)
-  w.str('Birdy', 32)
+  w.str('Boaty', 32)
   w.u16(s.antialias ? 4 : 1) // anti-aliasing level
   w.u16(0) // grey level
   w.u16(0) // blur level

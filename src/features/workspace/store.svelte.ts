@@ -9,7 +9,7 @@ import { runPrintCheck, worldTriangles } from '../../engine/geometry/runPrintChe
 import { runRepair } from '../../engine/geometry/runRepair'
 import { describeRepair } from '../../engine/geometry/repair'
 import { defaultMaterial } from '../../engine/loaders/loadModel'
-import type { BedSize, MarkKey, PrintMarks, PrintReport } from '../../engine/geometry/printCheck'
+import type { BedSize, Issue, MarkKey, PrintMarks, PrintReport } from '../../engine/geometry/printCheck'
 import { packRows } from '../../engine/geometry/arrange'
 import { rankOrientations } from '../../engine/geometry/orient'
 import { settle } from '../../engine/geometry/settle'
@@ -89,6 +89,8 @@ export const ws = $state({
   canUndoRepair: false,
   /** Problem picked with Show: only its area is highlighted and the camera zooms to it. */
   markFocus: null as MarkKey | null,
+  /** The active model's ignored issues (hidden from the check, kept so they can be shown again). */
+  ignoredIssues: [] as Issue[],
   /** Models on the active tab's plate, and which one the transform tools act on. */
   parts: [] as { name: string; triangles: number; color?: string }[],
   /** The active model's edit and repair history, newest last. */
@@ -133,6 +135,8 @@ interface Doc {
   /** What was done to this model, newest last: repairs and edits. */
   history: { label: string; note: string; at: number }[]
   fixNote: string | null
+  /** Issue codes the user chose to ignore for this model. */
+  ignored?: Set<string>
 }
 /** One step back: the parts on the plate, where each sat, and which was selected. */
 interface Snap {
@@ -282,7 +286,7 @@ export async function checkNow() {
     doc.report = report
     doc.marks = marks ? { marks, at } : null
     if (seq === checkSeq && ws.activeId === id) {
-      ws.report = report
+      setActiveReport(doc)
       if (ws.markFocus && !report.issues.some((i) => i.mark === ws.markFocus)) ws.markFocus = null
       showMarks(false)
     }
@@ -293,10 +297,53 @@ export async function checkNow() {
   }
 }
 
+/**
+ * A report without the issues the user ignored, its verdict worked out again from what is left.
+ */
+export function withoutIgnored(report: PrintReport, ignored: Set<string> | undefined): PrintReport {
+  if (!ignored?.size) return report
+  const issues = report.issues.filter((i) => !ignored.has(i.code))
+  const verdict = issues.some((i) => i.level === 'error') ? 'fail' : issues.some((i) => i.level === 'warn') ? 'attention' : 'ready'
+  return { ...report, issues, verdict }
+}
+
+function setActiveReport(doc: Doc) {
+  ws.report = doc.report ? withoutIgnored(doc.report, doc.ignored) : null
+  ws.ignoredIssues = doc.report?.issues.filter((i) => doc.ignored?.has(i.code)) ?? []
+}
+
+/** Hides an issue for this model (it no longer counts toward the verdict or lights up the model). */
+export function ignoreIssue(code: string) {
+  const doc = activeDoc()
+  if (!doc) return
+  ;(doc.ignored ??= new Set()).add(code)
+  const mark = doc.report?.issues.find((i) => i.code === code)?.mark
+  if (mark && ws.markFocus === mark) ws.markFocus = null
+  setActiveReport(doc)
+  showMarks(false)
+}
+
+/** Shows ignored issues again. */
+export function unignoreIssues() {
+  const doc = activeDoc()
+  if (!doc) return
+  doc.ignored = undefined
+  setActiveReport(doc)
+  showMarks(false)
+}
+
 /** Draws the active model's problem areas; with a focus, only that one, zoomed to. */
 function showMarks(zoom: boolean) {
   const doc = activeDoc()
-  viewer?.setMarks(doc?.marks?.marks ?? null, doc?.marks?.at ?? null, ws.markFocus, zoom)
+  let marks = doc?.marks?.marks ?? null
+  if (marks && doc?.ignored?.size) {
+    // Ignored problems stop lighting up the model.
+    const hidden = new Set<MarkKey>(doc.report?.issues.filter((i) => i.mark && doc.ignored!.has(i.code)).map((i) => i.mark!))
+    // Hole rings belong to the open edges.
+    if (hidden.has('openEdges')) hidden.add('holeCenters')
+    if (hidden.size) marks = Object.fromEntries(Object.entries(marks).filter(([k]) => !hidden.has(k as MarkKey))) as PrintMarks
+  }
+  viewer?.setMarks(marks, doc?.marks?.at ?? null, ws.markFocus, zoom)
 }
 
 /** Show button on an issue: highlight just that problem and zoom to it; again to go back. */
@@ -306,7 +353,8 @@ export function focusMark(key: MarkKey | null) {
 }
 
 export function getReport(id: string) {
-  return docs.get(id)?.report ?? null
+  const doc = docs.get(id)
+  return doc?.report ? withoutIgnored(doc.report, doc.ignored) : null
 }
 
 function markModified() {
@@ -405,7 +453,7 @@ export function activate(id: string, frame = false) {
   ws.redoLabel = doc.redo?.at(-1)?.label ?? null
   if (ws.activeId !== id) modelListener.call('switch')
   ws.activeId = id
-  ws.report = doc.report
+  setActiveReport(doc)
   ws.markFocus = null
   ws.fixNote = doc.fixNote
   ws.canUndoRepair = !!doc.beforeRepair
@@ -434,6 +482,7 @@ export function closeModel(id: string) {
     else {
       ws.activeId = null
       ws.report = null
+      ws.ignoredIssues = []
       ws.markFocus = null
       viewer?.setModel(null)
       viewer?.setMarks(null, null, null, false)
@@ -460,7 +509,7 @@ export async function openFromDownload(id: number) {
   }
 }
 
-/** Files dropped anywhere in Birdy: opens each model, explains anything else. */
+/** Files dropped anywhere in Boaty: opens each model, explains anything else. */
 export async function openDroppedFiles(files: File[]) {
   const bad: string[] = []
   let opened = 0
@@ -1014,7 +1063,7 @@ export async function sendToSlicer(slicerId?: string) {
   if (!meta || !data) return
   ws.error = null
   const res = await window.api.slicer.open({ name: meta.name, data, slicerId })
-  if (res.ok) ws.notice = { text: `Opened in ${res.slicer}. The exported copy is in Birdy/Exports/Slicer.` }
+  if (res.ok) ws.notice = { text: `Opened in ${res.slicer}. The exported copy is in Boaty/Exports/Slicer.` }
   else ws.error = res.error ?? 'Could not open the slicer.'
 }
 

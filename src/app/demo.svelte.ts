@@ -10,7 +10,7 @@ import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
 import { addShape, scaleBy, moveBy, rotateBy, undo, redo, setUniform, setDimension, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
-import { chooseMachine, importFrom, installEngine, loadCatalog, openPrinterEditor, saveGcode, setPreset, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
+import { chooseGcodeFolder, chooseMachine, folderLabel, importFrom, installEngine, loadCatalog, openPrinterEditor, saveGcode, setPreset, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 import { BED } from '../features/workspace/store.svelte'
 
 /** Builds a small printable sample (a torus knot, ~70 mm) as a real binary STL and opens it. */
@@ -72,7 +72,7 @@ export function installDemo() {
     if (getDemo) {
       const [what, ...rest] = getDemo.split('|')
       if (what === 'page') {
-        // "Get in Birdy" on a real model page.
+        // "Get in Boaty" on a real model page.
         const url = rest.join('|')
         ws.layout = 'browse'
         window.api.tabs.navigate(url)
@@ -198,6 +198,25 @@ export function installDemo() {
         await repairActive()
         await checkNow()
         console.log(`repair direct: ${issueList()} note=${ws.fixNote}`)
+      } else if (repairDemo === 'ignore') {
+        // Press Ignore on every issue but the first, then on the first, then Show again.
+        const click = (label: string, nth = 0) => {
+          const btn = [...document.querySelectorAll<HTMLButtonElement>('.sidebar button')].filter((b) => b.textContent?.trim() === label)[nth]
+          if (!btn) throw new Error(`no ${label} button`)
+          btn.click()
+        }
+        const tick = () => new Promise((r) => setTimeout(r, 100))
+        while (ws.report!.issues.length > 1) {
+          click('Ignore', 1)
+          await tick()
+        }
+        console.log(`ignore some: verdict=${ws.report!.verdict} issues=${issueList()} ignored=${ws.ignoredIssues.map((i) => i.code).join(',')}`)
+        click('Ignore')
+        await tick()
+        await checkNow()
+        const hint = document.querySelector('.sidebar .hint.ignored')?.textContent?.trim()
+        console.log(`ignore all: verdict=${ws.report!.verdict} issues=${issueList()} hud=${document.querySelector('.verdict-hud')?.textContent?.trim()} hint=${hint}`)
+        await new Promise((r) => setTimeout(r, 300))
       }
       return
     }
@@ -372,7 +391,7 @@ export function installDemo() {
       if (editDemo === 'text-top') { selectPart(0); await writeTextOnPart({ text: 'BIRDY', font: 'Arial', bold: true, size: 6, depth: 1.5, place: 'top', mode: 'emboss' }) }
       if (editDemo === 'text-front') { selectPart(0); await writeTextOnPart({ text: 'Hi', font: 'Impact', bold: false, size: 12, depth: 1.5, place: 'front', mode: 'emboss' }) }
       if (editDemo === 'engrave') { selectPart(0); await writeTextOnPart({ text: 'A1', font: 'Arial', bold: true, size: 14, depth: 2, place: 'top', mode: 'engrave' }) }
-      if (editDemo === 'text-part') { selectPart(0); await writeTextOnPart({ text: 'Birdy\nlabel', font: 'Segoe UI', bold: true, size: 8, depth: 2, place: 'top', mode: 'separate' }) }
+      if (editDemo === 'text-part') { selectPart(0); await writeTextOnPart({ text: 'Boaty\nlabel', font: 'Segoe UI', bold: true, size: 8, depth: 2, place: 'top', mode: 'separate' }) }
       if (editDemo === 'color') { selectPart(1); setPartColor('#e53935'); selectPart(0); setPartColor('#1e88e5'); console.log(`edit colours: ${ws.parts.map((p) => p.color).join(',')}`) }
       if (editDemo === 'align') { selectPart(0); alignParts('x', 'min'); alignParts('z', 'min') }
       if (editDemo === 'history') { await combineParts('union'); await simplifyPart(0.1); await repairActive(); undoEdit() }
@@ -610,19 +629,19 @@ Shape {
       }
       const ready = () => !!document.querySelector<HTMLButtonElement>('.dlg footer .primary') && !document.querySelector<HTMLButtonElement>('.dlg footer .primary')!.disabled
       if (sliceDemo === 'custom-edit') {
-        chooseMachine('Birdy Test Printer')
-        openPrinterEditor('Birdy Test Printer')
+        chooseMachine('Boaty Test Printer')
+        openPrinterEditor('Boaty Test Printer')
       } else {
-        if (sl.catalog?.machines.some((x) => x.name === 'Birdy Test Printer')) {
-          for (const k of ['process', 'filament'] as const) for (const p of sl.catalog![k === 'process' ? 'processes' : 'filaments'].filter((x) => x.name.endsWith('@Birdy Test Printer'))) await window.api.engine.deleteCustom(k, p.name)
-          sl.catalog = await window.api.engine.deleteCustom('machine', 'Birdy Test Printer')
+        if (sl.catalog?.machines.some((x) => x.name === 'Boaty Test Printer')) {
+          for (const k of ['process', 'filament'] as const) for (const p of sl.catalog![k === 'process' ? 'processes' : 'filaments'].filter((x) => x.name.endsWith('@Boaty Test Printer'))) await window.api.engine.deleteCustom(k, p.name)
+          sl.catalog = await window.api.engine.deleteCustom('machine', 'Boaty Test Printer')
         }
         openPrinterEditor()
       }
       const t0 = performance.now()
       if (!(await until(ready, 90_000))) throw new Error('editor never loaded its defaults')
       if (sliceDemo === 'custom') {
-        setIn(document.querySelector<HTMLInputElement>('.dlg .top input'), 'Birdy Test Printer')
+        setIn(document.querySelector<HTMLInputElement>('.dlg .top input'), 'Boaty Test Printer')
         setIn(fieldByLabel('Bed width X'), '220')
         setIn(fieldByLabel('Bed depth Y'), '180')
         setIn(fieldByLabel('Max height'), '150')
@@ -701,6 +720,14 @@ Shape {
     if ((window as unknown as { __demoSave?: boolean }).__demoSave) {
       await saveGcode()
       console.log(`save: notice=${ws.notice?.text} error=${sl.error}`)
+      // With a chosen folder (BIRDY_DEMO_FOLDER), saves go straight there and never overwrite.
+      await chooseGcodeFolder()
+      if (sl.gcodeFolder) {
+        for (let i = 0; i < 2; i++) {
+          await saveGcode()
+          console.log(`save folder=${sl.gcodeFolder} label=${folderLabel(sl.gcodeFolder)}: notice=${ws.notice?.text} error=${sl.error}`)
+        }
+      }
     }
     if (sl.result?.jobId) {
       // What the engine actually used, from the G-code's settings block.

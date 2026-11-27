@@ -109,7 +109,7 @@ interface SdcpStatus {
 
 const FILE_ERRORS = ['', 'the file failed its MD5 check', 'the file could not be read', 'the file is for a different screen resolution', 'the file format is not supported', 'the file is for a different printer model']
 
-/** Maps an SDCP status push onto Birdy's printer status. */
+/** Maps an SDCP status push onto Boaty's printer status. */
 export function mapSdcpStatus(s: SdcpStatus, name: string): PrinterStatus {
   const cur = Array.isArray(s.CurrentStatus) ? s.CurrentStatus : [s.CurrentStatus ?? 0]
   const pi = s.PrintInfo ?? {}

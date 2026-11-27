@@ -1,4 +1,4 @@
-# Birdy
+# Boaty
 
 A Windows desktop web browser that becomes a 3D-printing workspace the moment you open a model.
 Browse any model site, download an STL, and it opens beside the page: inspect it, check whether it
@@ -9,10 +9,10 @@ the whole app, the logo included: mustard yellow by default, seven other presets
 
 ## Install
 
-Download `Birdy-Setup-x.y.z.exe` from [Releases](../../releases) and run it.
+Download `Boaty-Setup-x.y.z.exe` from [Releases](../../releases) and run it.
 The installer is not code-signed yet, so Windows SmartScreen may ask you to confirm (More info → Run anyway).
 
-**Updates**: Birdy checks its GitHub releases shortly after it starts and every few hours. When a new
+**Updates**: Boaty checks its GitHub releases shortly after it starts and every few hours. When a new
 version is out, a strip at the bottom offers it; download it, then *Restart and update*. You can also
 check from Library → About. Updates are verified against their SHA-512 before they run.
 
@@ -22,7 +22,7 @@ check from Library → About. Updates are verified against their SHA-512 before 
 - Tabs, address bar, back / forward / reload / home, session restore, page zoom (Ctrl + / − / 0)
 - Google search tuned for 3D: a selector next to the address bar searches for 3D models, STL, 3MF, OBJ, GLB/glTF, STEP, assets, or the plain web
 - Bookmarks (star in the address bar)
-- Downloads saved to `Documents\Birdy\Downloads`, with progress, cancel, retry, and duplicate detection by SHA-256
+- Downloads saved to `Documents\Boaty\Downloads`, with progress, cancel, retry, and duplicate detection by SHA-256
 
 **Workspace** (split view beside the website, resizable)
 - Opens STL, 3MF, OBJ, GLB/glTF and PLY: from downloads automatically, by drag and drop, or with Ctrl+O
@@ -38,7 +38,7 @@ check from Library → About. Updates are verified against their SHA-512 before 
 - **Open in slicer**: auto-detects OrcaSlicer, Bambu Studio, PrusaSlicer and UltiMaker Cura, or you can pick any slicer executable
 
 **Slice and print** (Slice tab in the workspace sidebar)
-- Slices inside Birdy with the OrcaSlicer 2.5.2 engine. Birdy downloads it once on request (about 200 MB,
+- Slices inside Boaty with the OrcaSlicer 2.5.2 engine. Boaty downloads it once on request (about 200 MB,
   checked against a pinned SHA-256) into its own app-data folder; an installed OrcaSlicer is used if present
 - Printer profiles for 70+ brands (about 1,200 machines) with matching process and filament presets
 - **Import settings** from OrcaSlicer, Bambu Studio, PrusaSlicer or UltiMaker Cura: picks up your printer,
@@ -50,7 +50,7 @@ check from Library → About. Updates are verified against their SHA-512 before 
   PrusaLink, or **USB** (Marlin serial, with line checksums, resend handling, pause and cancel).
   API keys and passwords are encrypted with Windows' secure storage
 
-**Models folder** (`Documents\Birdy\Models`, folder button in the left rail)
+**Models folder** (`Documents\Boaty\Models`, folder button in the left rail)
 - Downloaded STL, 3MF, OBJ, GLB and PLY files are copied in; downloaded ZIPs are unpacked into a folder of
   their own with only the model files (wrapper folders like Thingiverse's `files/` are dropped)
 - The Models panel shows folders and model thumbnails; click a model to open it in the workspace
@@ -81,7 +81,7 @@ resources/  bundled start page
 tests/      print-check tests
 ```
 
-Releasing: attach `Birdy-Setup-x.y.z.exe`, its `.blockmap` and `latest.yml` from `release/` to the GitHub
+Releasing: attach `Boaty-Setup-x.y.z.exe`, its `.blockmap` and `latest.yml` from `release/` to the GitHub
 release. The in-app updater reads `latest.yml`.
 
 Security: websites run in sandboxed views with no Node access and no preload. The app UI talks to the
@@ -89,13 +89,13 @@ main process only through a small, typed, sender-checked IPC surface. Downloaded
 
 ## Licence
 
-Birdy is free software under the [GNU Affero General Public License v3.0](LICENSE).
+Boaty is free software under the [GNU Affero General Public License v3.0](LICENSE).
 
 ## Credits
 
 Slicing is powered by the [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer) engine (AGPL-3.0).
-Birdy runs the unmodified OrcaSlicer 2.5.2 release as a separate program and is not affiliated with
-the OrcaSlicer project. Birdy also works alongside these open-source projects:
+Boaty runs the unmodified OrcaSlicer 2.5.2 release as a separate program and is not affiliated with
+the OrcaSlicer project. Boaty also works alongside these open-source projects:
 
 - [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer) (AGPL-3.0)
 - [PrusaSlicer](https://github.com/prusa3d/PrusaSlicer) (AGPL-3.0)

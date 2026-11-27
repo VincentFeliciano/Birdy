@@ -9,7 +9,7 @@
 <header class="topbar">
   <div class="brand">
     <Logo />
-    <span class="word mono">BIRDY</span>
+    <span class="word mono">BOATY</span>
   </div>
   <div class="tabs" role="tablist" aria-label="Website tabs">
     {#each browser.tabs as t (t.id)}

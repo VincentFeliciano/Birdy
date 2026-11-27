@@ -48,11 +48,11 @@ export class BrowserManager {
     private opts: Options,
   ) {}
 
-  /** "Get in Birdy" on a model page: the URL comes from the tab itself, never from the UI. */
+  /** "Get in Boaty" on a model page: the URL comes from the tab itself, never from the UI. */
   getModel(): GetModelResult {
     const wc = this.active?.view.webContents
     const page = wc ? modelPage(wc.getURL()) : null
-    if (!wc || !page) return { ok: false, action: 'none', detail: 'This is not a model page Birdy knows.' }
+    if (!wc || !page) return { ok: false, action: 'none', detail: 'This is not a model page Boaty knows.' }
     if (page.files) {
       void wc.loadURL(page.files)
       return { ok: true, action: 'files', detail: page.hint }

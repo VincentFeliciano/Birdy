@@ -1,4 +1,4 @@
-// Model pages on the big 3D-model sites, and how Birdy gets the files from each.
+// Model pages on the big 3D-model sites, and how Boaty gets the files from each.
 
 export type ModelSite = 'thingiverse' | 'printables' | 'makerworld' | 'cults3d' | 'myminifactory' | 'thangs'
 
@@ -32,7 +32,7 @@ export function modelPage(raw: string): ModelPage | null {
       siteName: 'Thingiverse',
       id: m[1]!,
       files: onFiles ? null : `https://www.thingiverse.com/thing:${m[1]}/files`,
-      hint: 'Press "Download all files" (or Download on a single file). Birdy unpacks ZIPs into your Models folder and opens the model as soon as it arrives.',
+      hint: 'Press "Download all files" (or Download on a single file). Boaty unpacks ZIPs into your Models folder and opens the model as soon as it arrives.',
     }
   }
 
@@ -46,7 +46,7 @@ export function modelPage(raw: string): ModelPage | null {
       siteName: 'Printables',
       id: m[1]!,
       files: onFiles ? null : `${base}/files`,
-      hint: 'Press Download on a file, or "Download all model files". Birdy opens it as soon as it arrives.',
+      hint: 'Press Download on a file, or "Download all model files". Boaty opens it as soon as it arrives.',
     }
   }
 
@@ -58,7 +58,7 @@ export function modelPage(raw: string): ModelPage | null {
       siteName: 'MakerWorld',
       id: m[1]!,
       files: null,
-      hint: 'Press "Download STL/CAD files" or "Download 3MF" on the page (MakerWorld needs you signed in). Birdy opens it as soon as it arrives.',
+      hint: 'Press "Download STL/CAD files" or "Download 3MF" on the page (MakerWorld needs you signed in). Boaty opens it as soon as it arrives.',
     }
   }
 
@@ -70,7 +70,7 @@ export function modelPage(raw: string): ModelPage | null {
       siteName: 'Cults3D',
       id: m[1]!.toLowerCase(),
       files: null,
-      hint: 'Press Download on the page (Cults3D needs you signed in, and paid models must be bought first). Birdy opens it as soon as it arrives.',
+      hint: 'Press Download on the page (Cults3D needs you signed in, and paid models must be bought first). Boaty opens it as soon as it arrives.',
     }
   }
 
@@ -82,7 +82,7 @@ export function modelPage(raw: string): ModelPage | null {
       siteName: 'MyMiniFactory',
       id: m[1]!,
       files: null,
-      hint: 'Press Download on the page (MyMiniFactory needs you signed in). Birdy unpacks ZIPs into your Models folder and opens the model as soon as it arrives.',
+      hint: 'Press Download on the page (MyMiniFactory needs you signed in). Boaty unpacks ZIPs into your Models folder and opens the model as soon as it arrives.',
     }
   }
 
@@ -94,7 +94,7 @@ export function modelPage(raw: string): ModelPage | null {
       siteName: 'Thangs',
       id: (m[1] ?? m[2])!,
       files: null,
-      hint: 'Press Download on the page (Thangs needs you signed in). Birdy opens it as soon as it arrives.',
+      hint: 'Press Download on the page (Thangs needs you signed in). Boaty opens it as soon as it arrives.',
     }
   }
   return null

@@ -52,6 +52,8 @@ export const sl = $state({
   resultFor: null as string | null,
   stale: false,
   error: null as string | null,
+  /** Where G-code is saved (the user's pick, often a USB stick). */
+  gcodeFolder: null as string | null,
   candidates: [] as ImportCandidate[],
   importing: null as ImportSource | null,
   importNotes: [] as string[],
@@ -163,7 +165,7 @@ function ensureValidSelection() {
     return
   }
   const fitting = (list: PresetRef[]) => list.filter((p) => fitsMachine(p, m))
-  // Presets made for exactly this printer (a custom printer's own, or the ones Birdy ships) come first.
+  // Presets made for exactly this printer (a custom printer's own, or the ones Boaty ships) come first.
   const mine = (p: PresetRef) => p.user === true && p.name.endsWith(`@${m.name}`)
   const procs = fitting(c.processes).sort((a, b) => Number(mine(b)) - Number(mine(a)))
   if (!c.processes.some((p) => p.name === sl.settings.process)) {
@@ -398,7 +400,11 @@ function fdmHistory(how: 'saved' | 'sent' | 'usb', printer: string, path?: strin
   })
 }
 
-export async function saveGcode() {
+/**
+ * Saves the G-code. With a chosen folder it goes straight there; `ask` (or no folder yet) opens
+ * the Save dialog, starting in that folder.
+ */
+export async function saveGcode(ask = false) {
   const id = sl.result?.jobId
   if (!id) {
     sl.error = 'Slice the model first, then save its G-code.'
@@ -406,13 +412,35 @@ export async function saveGcode() {
   }
   sl.error = null
   try {
-    const r = await window.api.engine.saveGcode(id)
-    if (r.ok && r.path) fdmHistory('saved', sl.settings.machine, r.path)
-    if (r.ok && r.path) ws.notice = { text: `Saved ${r.path} and verified it on disk.` }
-    else if (!r.canceled) sl.error = r.error ?? 'Saving the G-code failed.'
+    const r = await window.api.engine.saveGcode(id, sl.gcodeFolder && !ask ? 'folder' : 'dialog')
+    if (r.ok && r.path) {
+      fdmHistory('saved', sl.settings.machine, r.path)
+      ws.notice = { text: `Saved ${r.path} and verified it on disk.` }
+      sl.gcodeFolder = await window.api.engine.gcodeFolder()
+    } else if (!r.canceled) sl.error = r.error ?? 'Saving the G-code failed.'
   } catch (err) {
     sl.error = `Saving the G-code failed: ${cleanError(err)}`
   }
+}
+
+/** Picks the folder G-code is saved to. */
+export async function chooseGcodeFolder() {
+  try {
+    const dir = await window.api.engine.pickGcodeFolder()
+    if (dir) sl.gcodeFolder = dir
+  } catch (err) {
+    sl.error = cleanError(err)
+  }
+}
+
+export async function loadGcodeFolder() {
+  sl.gcodeFolder = await window.api.engine.gcodeFolder().catch(() => null)
+}
+
+/** A short label for a folder: "E:\" stays as is, deeper folders show their last part. */
+export function folderLabel(dir: string): string {
+  if (/^[a-z]:\\?$/i.test(dir)) return dir.slice(0, 2) + '\\'
+  return dir.split(/[\\/]/).filter(Boolean).pop() ?? dir
 }
 
 export function choosePrinter(id: string) {

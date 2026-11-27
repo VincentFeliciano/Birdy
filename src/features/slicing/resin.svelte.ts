@@ -8,7 +8,7 @@ import { printCost } from '../../app/costs.svelte'
 import { recordPrint } from '../history/history.svelte'
 import { activeModel, BED, exportActive, getViewer, onModelChange, setBed, ws } from '../workspace/store.svelte'
 
-// Resin (MSLA) slicing: Birdy's own slicer writing Elegoo .goo files.
+// Resin (MSLA) slicing: Boaty's own slicer writing Elegoo .goo files.
 
 export type SliceMode = 'fdm' | 'resin'
 

@@ -6,7 +6,7 @@ export const updates = $state({
   dismissed: localStorage.getItem('birdy.updateDismissed'),
   /** The user pressed "Check for updates", so "no update" and errors are worth showing. */
   manual: false,
-  /** Strip closed during a download or with an update ready (it still installs when Birdy quits). */
+  /** Strip closed during a download or with an update ready (it still installs when Boaty quits). */
   hidden: false,
 })
 

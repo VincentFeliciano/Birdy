@@ -70,7 +70,7 @@
       name: 'OrcaSlicer',
       license: 'AGPL-3.0',
       url: 'https://github.com/OrcaSlicer/OrcaSlicer',
-      note: 'Its engine (version 2.5.2, unmodified) does the slicing in the Slice tab. Birdy also hands models to an installed OrcaSlicer with one click.',
+      note: 'Its engine (version 2.5.2, unmodified) does the slicing in the Slice tab. Boaty also hands models to an installed OrcaSlicer with one click.',
     },
     {
       name: 'PrusaSlicer',
@@ -231,7 +231,7 @@
       {:else}
         <div class="about">
           <div class="about-logo"><Logo size={72} glow={2} /></div>
-          <h3>Birdy</h3>
+          <h3>Boaty</h3>
           <div class="version">
             <span class="mono">Version {updates.state?.current ?? ''}</span>
             <span class="ustatus">{updateLine}</span>
@@ -246,7 +246,7 @@
             <button class="link" onclick={() => openBookmark('https://github.com/VincentFeliciano/Birdy')}>Source code</button>
           </p>
           <h3 class="hud-label">Credits</h3>
-          <p class="dim">Slicing is powered by the OrcaSlicer engine, run as a separate, unmodified program. Birdy is not affiliated with the OrcaSlicer project. It also works alongside these open-source projects.</p>
+          <p class="dim">Slicing is powered by the OrcaSlicer engine, run as a separate, unmodified program. Boaty is not affiliated with the OrcaSlicer project. It also works alongside these open-source projects.</p>
           <ul>
             {#each credits as c}
               <li>

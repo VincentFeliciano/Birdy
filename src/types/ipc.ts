@@ -219,7 +219,7 @@ export type Unsubscribe = () => void
 
 export type UpdateStatus = 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error' | 'unsupported'
 
-/** A print Birdy saved or sent, as entered by the app. */
+/** A print Boaty saved or sent, as entered by the app. */
 export interface HistoryInput {
   name: string
   kind: 'fdm' | 'resin'
@@ -341,7 +341,7 @@ export interface Api {
     onState(cb: (s: UpdateState) => void): Unsubscribe
     check(): Promise<UpdateState>
     download(): Promise<UpdateState>
-    /** Quits Birdy, installs the downloaded update and starts it again. */
+    /** Quits Boaty, installs the downloaded update and starts it again. */
     install(): void
   }
   theme: {
@@ -379,7 +379,11 @@ export interface Api {
     slice(req: SliceRequest): Promise<SliceResult>
     cancelSlice(): void
     readGcode(jobId: string): Promise<Uint8Array>
-    saveGcode(jobId: string): Promise<SliceSaveResult>
+    /** 'folder' saves straight into the chosen G-code folder; 'dialog' (default) asks where. */
+    saveGcode(jobId: string, mode?: 'folder' | 'dialog'): Promise<SliceSaveResult>
+    /** The folder G-code is saved to, or null when none was chosen. */
+    gcodeFolder(): Promise<string | null>
+    pickGcodeFolder(): Promise<string | null>
     importCandidates(): Promise<ImportCandidate[]>
     importSettings(source: ImportSource): Promise<ImportResult>
     /** Every engine setting for these presets (a quick test slice). */

@@ -1,6 +1,6 @@
-// In-app updates from Birdy's GitHub releases (electron-updater).
+// In-app updates from Boaty's GitHub releases (electron-updater).
 //
-// Each release carries latest.yml (version, file name, SHA-512) next to the installer. Birdy checks
+// Each release carries latest.yml (version, file name, SHA-512) next to the installer. Boaty checks
 // it shortly after start and every few hours, but only downloads when the user asks, then installs
 // on restart. The download is verified against the SHA-512 before it is run.
 import { app, type BrowserWindow } from 'electron'
@@ -52,7 +52,7 @@ export function setupUpdater(window: BrowserWindow) {
   win = window
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
-  // Birdy's releases are published as pre-releases while it is in early development.
+  // Boaty's releases are published as pre-releases while it is in early development.
   autoUpdater.allowPrerelease = true
   autoUpdater.logger = null
 
@@ -60,7 +60,7 @@ export function setupUpdater(window: BrowserWindow) {
   const feed = process.argv.find((a) => a.startsWith('--update-feed='))?.slice('--update-feed='.length)
   if (feed && /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(feed)) {
     autoUpdater.setFeedURL({ provider: 'generic', url: feed })
-    // A test run must never install what it downloaded over the real installed Birdy.
+    // A test run must never install what it downloaded over the real installed Boaty.
     autoUpdater.autoInstallOnAppQuit = false
   }
 
@@ -105,7 +105,7 @@ export async function downloadUpdate(): Promise<UpdateState> {
   return state
 }
 
-/** Quits and runs the downloaded installer silently; Birdy starts again afterwards. */
+/** Quits and runs the downloaded installer silently; Boaty starts again afterwards. */
 export function installUpdate() {
   if (state.status !== 'ready') return
   autoUpdater.quitAndInstall(true, true)

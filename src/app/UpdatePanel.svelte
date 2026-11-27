@@ -9,27 +9,27 @@
 </script>
 
 {#if s}
-  <div class="upd neon-panel" role="region" aria-label="Birdy update" aria-live="polite">
+  <div class="upd neon-panel" role="region" aria-label="Boaty update" aria-live="polite">
     <div class="icon" class:ready={s.status === 'ready'}><Icon name={s.status === 'ready' ? 'check' : 'download'} size={16} /></div>
     <div class="text">
       {#if s.status === 'checking'}
         <div class="t">Checking for updates…</div>
       {:else if s.status === 'none'}
-        <div class="t">Birdy is up to date</div>
+        <div class="t">Boaty is up to date</div>
         <div class="d">You have the newest version, {s.current}.</div>
       {:else if s.status === 'available'}
-        <div class="t">Birdy {s.version} is available</div>
+        <div class="t">Boaty {s.version} is available</div>
         <div class="d">
           You have {s.current}.
           {#if s.notes}<button class="link" onclick={() => (showNotes = !showNotes)}>{showNotes ? 'Hide' : "What's new"}</button>{/if}
         </div>
       {:else if s.status === 'downloading'}
-        <div class="t">Downloading Birdy {s.version}… {pct}%</div>
+        <div class="t">Downloading Boaty {s.version}… {pct}%</div>
         <div class="bar"><span style="width: {pct}%"></span></div>
         {#if s.bytesPerSecond}<div class="d mono">{fmtBytes(s.bytesPerSecond)}/s</div>{/if}
       {:else if s.status === 'ready'}
-        <div class="t">Birdy {s.version} is ready to install</div>
-        <div class="d">Birdy restarts to finish. Otherwise it installs the next time you close Birdy.</div>
+        <div class="t">Boaty {s.version} is ready to install</div>
+        <div class="d">Boaty restarts to finish. Otherwise it installs the next time you close Boaty.</div>
       {:else if s.status === 'error'}
         <div class="t">Couldn't update</div>
         <div class="d">{s.error}</div>

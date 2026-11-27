@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isSearchType, type NewBookmark, type NewLibraryModel, type SaveRequest, type SlicerHandoff } from '../src/types/ipc'
 import { BrowserManager } from './browser-manager'
+import { migrateUserData, NEW_NAME } from './rename-migration'
 import { installSignInHeaders, plainChromeUserAgent } from './user-agent'
 import { ModelsManager } from './models'
 import { checkForUpdates, downloadUpdate, getUpdateState, installUpdate, setupUpdater } from './updater'
@@ -19,9 +20,17 @@ import { importCandidates, importSettings } from './slicing/import'
 import { listPrinters, removePrinter, savePrinter, sendToPrinter, testPrinter, printerStatus, printerSnapshot, sendResinToPrinter } from './printers'
 import type { CustomPresetInput, ImportSource, PresetKind, PrinterInput, ResolveRequest, SendRequest, SerialPortChoice, SliceRequest } from '../src/types/slicing'
 
-app.setName('Birdy')
+app.setName(NEW_NAME)
+// Development only: point the app at stand-in AppData and Documents folders to test the move below.
+if (!app.isPackaged && process.env['BOATY_TEST_APPDATA'] && process.env['BOATY_TEST_DOCUMENTS']) {
+  app.setPath('appData', process.env['BOATY_TEST_APPDATA'])
+  app.setPath('userData', join(process.env['BOATY_TEST_APPDATA'], NEW_NAME))
+  app.setPath('documents', process.env['BOATY_TEST_DOCUMENTS'])
+}
+// Birdy was renamed Boaty: move the old data folder over before anything reads it.
+migrateUserData()
 // Shared and service workers take their user agent from here, not from the session. Left alone they
-// would announce "Birdy/x Electron/x" while the page says plain Chrome, a mismatch bot checks catch.
+// would announce "Boaty/x Electron/x" while the page says plain Chrome, a mismatch bot checks catch.
 app.userAgentFallback = plainChromeUserAgent(app.userAgentFallback)
 // Screenshot mode must keep painting even when other windows cover this one.
 if (process.argv.some((x) => x.startsWith('--screenshot='))) {
@@ -99,7 +108,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 620,
     show: false,
-    title: 'Birdy',
+    title: NEW_NAME,
     backgroundColor: '#0b0c0f',
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#0b0c0f', symbolColor: '#E6E8EB', height: 44 },
@@ -274,7 +283,9 @@ function registerIpc(exportsDir: string) {
   handle('engine:slice', async (req) => eng().slice(req as SliceRequest))
   on('engine:cancel-slice', () => engine?.cancelSlice())
   handle('engine:read-gcode', async (jobId) => eng().readGcode(String(jobId)))
-  handle('engine:save-gcode', async (jobId) => (win ? eng().saveGcode(win, String(jobId)) : { ok: false }))
+  handle('engine:save-gcode', async (jobId, mode) => (win ? eng().saveGcode(win, String(jobId), mode === 'folder' ? 'folder' : 'dialog') : { ok: false }))
+  handle('engine:gcode-folder', async () => eng().gcodeFolder())
+  handle('engine:pick-gcode-folder', async () => (win ? eng().pickGcodeFolder(win) : null))
   handle('engine:import-candidates', async () => importCandidates())
   const presetKind = (k: unknown): PresetKind => {
     if (k === 'machine' || k === 'process' || k === 'filament') return k

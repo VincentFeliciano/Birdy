@@ -19,7 +19,7 @@ const MAX_THUMB = 400_000
 
 /**
  * Bookmarks and saved models, organised into groups. Metadata lives in library.json; model
- * files are copied into Birdy/Library/<group>/ so the library never depends on Downloads.
+ * files are copied into Boaty/Library/<group>/ so the library never depends on Downloads.
  * (The plan moves this metadata to SQLite later.)
  */
 export class Library {
@@ -154,7 +154,7 @@ export class Library {
     this.commit()
   }
 
-  /** Removes the entry. The file stays on disk in Birdy/Library unless deleteFile is true. */
+  /** Removes the entry. The file stays on disk in Boaty/Library unless deleteFile is true. */
   async removeModel(id: unknown) {
     const before = this.data.models.length
     this.data.models = this.data.models.filter((m) => m.id !== id)

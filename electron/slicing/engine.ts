@@ -1,7 +1,7 @@
 import { app, dialog, type BrowserWindow } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { createWriteStream, existsSync, readdirSync, statSync } from 'node:fs'
+import { createWriteStream, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { copyFile, cp, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -19,13 +19,13 @@ import type {
   SliceResult,
   SliceSaveResult,
 } from '../../src/types/slicing'
-import { MAX_MODEL_BYTES, sanitizeFileName } from '../file-system'
+import { MAX_MODEL_BYTES, sanitizeFileName, workspaceDirs } from '../file-system'
 import { bedFromSettings, buildJobPreset, customPreset, parseCatalogLog, parseConfigBlock, pickFilament, pickProcess, stripConfChecksum, summarizeGcode, withConfChecksum } from './presets'
 import { BUILTIN_PRESETS } from './builtins'
 
 /**
  * The slicing engine is OrcaSlicer (AGPL-3.0), run as a separate command-line process.
- * Birdy installs the official portable build from OrcaSlicer's GitHub release, pinned to
+ * Boaty installs the official portable build from OrcaSlicer's GitHub release, pinned to
  * this exact file and checked against its SHA-256 before anything is extracted.
  */
 export const ENGINE = {
@@ -42,7 +42,7 @@ const KINDS: PresetKind[] = ['machine', 'process', 'filament']
 
 const enginesDir = () => join(app.getPath('userData'), 'engines')
 const birdyEngineDir = () => join(enginesDir(), `orcaslicer-${ENGINE.version}`)
-/** OrcaSlicer's data folder for Birdy. Kept apart from the user's own OrcaSlicer settings. */
+/** OrcaSlicer's data folder for Boaty. Kept apart from the user's own OrcaSlicer settings. */
 export const dataDir = () => join(enginesDir(), 'orca-data')
 /** Presets imported from the user's slicers, one JSON per preset. */
 export const importedDir = () => join(enginesDir(), 'imported')
@@ -77,7 +77,7 @@ export class SlicingEngine {
     this.emit(this.get())
   }
 
-  /** Prefers the engine Birdy installed, then a dev copy, then an OrcaSlicer install. */
+  /** Prefers the engine Boaty installed, then a dev copy, then an OrcaSlicer install. */
   locate() {
     const candidates: [EngineSource, string][] = [['birdy', join(birdyEngineDir(), ENGINE.exe)]]
     if (!app.isPackaged) candidates.push(['dev', join(app.getAppPath(), '.tmp', 'orca', ENGINE.exe)])
@@ -90,7 +90,7 @@ export class SlicingEngine {
     return this.get()
   }
 
-  /** Downloads, verifies and unpacks the pinned OrcaSlicer build into Birdy's data folder. */
+  /** Downloads, verifies and unpacks the pinned OrcaSlicer build into Boaty's data folder. */
   async install(): Promise<EngineState> {
     if (this.state.installing) return this.get()
     this.abort = new AbortController()
@@ -439,7 +439,7 @@ export class SlicingEngine {
     this.running?.kill()
   }
 
-  /** Path of a finished job's G-code. Job ids are UUIDs Birdy created; nothing else resolves. */
+  /** Path of a finished job's G-code. Job ids are UUIDs Boaty created; nothing else resolves. */
   jobGcode(jobId: string): string {
     if (!/^[0-9a-f-]{36}$/i.test(jobId)) throw new Error('Unknown slice.')
     const dir = join(jobsDir(), jobId)
@@ -452,36 +452,88 @@ export class SlicingEngine {
     return new Uint8Array(await readFile(this.jobGcode(jobId)))
   }
 
-  async saveGcode(win: BrowserWindow, jobId: string): Promise<SliceSaveResult> {
+  /** The folder G-code is saved to (picked by the user; often a USB stick), or null. */
+  gcodeFolder(): string | null {
+    try {
+      const f = JSON.parse(readFileSync(gcodeFolderFile(), 'utf8')).folder
+      return typeof f === 'string' && f ? f : null
+    } catch {
+      return null
+    }
+  }
+
+  private rememberGcodeFolder(folder: string) {
+    try {
+      writeFileSync(gcodeFolderFile(), JSON.stringify({ folder }))
+    } catch {
+      /* not worth failing a save over */
+    }
+  }
+
+  /** Lets the user pick the folder G-code goes to. */
+  async pickGcodeFolder(win: BrowserWindow): Promise<string | null> {
+    const forced = process.argv.includes('--demo') ? process.env.BIRDY_DEMO_FOLDER : undefined
+    const res = forced
+      ? { canceled: false, filePaths: [forced] }
+      : await dialog.showOpenDialog(win, {
+          title: 'Choose where G-code is saved (for example your USB stick)',
+          defaultPath: this.gcodeFolder() ?? undefined,
+          properties: ['openDirectory', 'createDirectory'],
+        })
+    const dir = res.canceled ? undefined : res.filePaths[0]
+    if (!dir) return null
+    this.rememberGcodeFolder(dir)
+    return dir
+  }
+
+  /**
+   * Saves a slice's G-code. 'folder' writes straight into the chosen folder (never overwriting:
+   * a number is added); 'dialog' asks where, starting in that folder.
+   */
+  async saveGcode(win: BrowserWindow, jobId: string, mode: 'folder' | 'dialog' = 'dialog'): Promise<SliceSaveResult> {
     let src: string
     try {
       src = this.jobGcode(jobId)
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }
-    const exportsDir = join(app.getPath('documents'), 'Birdy', 'Exports')
-    await mkdir(exportsDir, { recursive: true }).catch(() => {})
-    // Test runs (--demo with BIRDY_DEMO_SAVE) save without the dialog.
-    const forced = process.argv.includes('--demo') ? process.env.BIRDY_DEMO_SAVE : undefined
-    const res = forced ? { canceled: false, filePath: forced } : await dialog.showSaveDialog(win, {
-      title: 'Save G-code',
-      defaultPath: join(exportsDir, src.split(/[\\/]/).pop()!),
-      filters: [{ name: 'G-code', extensions: ['gcode'] }],
-    })
-    if (res.canceled || !res.filePath) return { ok: false, canceled: true }
-    const dest = /\.(gcode|gco|g)$/i.test(res.filePath) ? res.filePath : `${res.filePath}.gcode`
+    const name = src.split(/[\\/]/).pop()!
+    const chosen = this.gcodeFolder()
+    let target: string
+    if (mode === 'folder') {
+      if (!chosen) return { ok: false, error: 'Choose a folder to save G-code to first.' }
+      if (!existsSync(chosen)) {
+        return { ok: false, error: `${chosen} isn't available. If it's a USB stick, plug it in, or choose another folder.` }
+      }
+      target = freeName(chosen, name)
+    } else {
+      let start = chosen && existsSync(chosen) ? chosen : workspaceDirs().exports
+      if (start !== chosen) await mkdir(start, { recursive: true }).catch(() => (start = app.getPath('documents')))
+      // Test runs (--demo with BIRDY_DEMO_SAVE) save without the dialog.
+      const forced = process.argv.includes('--demo') ? process.env.BIRDY_DEMO_SAVE : undefined
+      const res = forced ? { canceled: false, filePath: forced } : await dialog.showSaveDialog(win, {
+        title: 'Save G-code',
+        defaultPath: join(start, name),
+        filters: [{ name: 'G-code', extensions: ['gcode'] }],
+      })
+      if (res.canceled || !res.filePath) return { ok: false, canceled: true }
+      target = res.filePath
+    }
+    const dest = /\.(gcode|gco|g)$/i.test(target) ? target : `${target}.gcode`
     // Any failure is reported to the user, never thrown away.
     try {
       await mkdir(dirname(dest), { recursive: true })
       await copyWithRetry(src, dest)
       const [a, b] = await Promise.all([stat(src), stat(dest)])
       if (a.size !== b.size) return { ok: false, error: 'The saved file could not be verified.' }
+      // Next time, start where this one went.
+      this.rememberGcodeFolder(dirname(dest))
       return { ok: true, path: dest }
     } catch (err) {
       const e = err as NodeJS.ErrnoException
       const why =
         e.code === 'EPERM' || e.code === 'EACCES'
-          ? 'Windows would not let Birdy write there (the folder may be protected, or the file is open in another program). Pick another folder.'
+          ? 'Windows would not let Boaty write there (the folder may be protected, or the file is open in another program). Pick another folder.'
           : e.code === 'EBUSY'
             ? 'The file is open in another program. Close it or pick another name.'
             : e.code === 'ENOSPC'
@@ -505,6 +557,20 @@ async function finishedGcode(outDir: string, failure: string | null): Promise<st
   if (!post) return null
   const text = await readHeadTail(join(outDir, post))
   return /; (EXECUTABLE_BLOCK_END|CONFIG_BLOCK_END)/.test(text) ? join(outDir, post) : null
+}
+
+function gcodeFolderFile() {
+  return join(app.getPath('userData'), 'gcode-folder.json')
+}
+
+/** `name` in `dir`, numbered (name (2).gcode) when a file by that name is already there. */
+function freeName(dir: string, name: string): string {
+  const dot = name.lastIndexOf('.')
+  const stem = dot > 0 ? name.slice(0, dot) : name
+  const ext = dot > 0 ? name.slice(dot) : ''
+  let p = join(dir, name)
+  for (let i = 2; existsSync(p) && i < 1000; i++) p = join(dir, `${stem} (${i})${ext}`)
+  return p
 }
 
 /** Copies a file, retrying while another program (often a virus scanner) still holds it. */
@@ -693,7 +759,7 @@ async function deleteImported(kind: PresetKind, name: string) {
   if (j && (j.birdy_custom === true || j.birdy_builtin === true)) await rm(importedFile(kind, name), { force: true })
 }
 
-/** Writes the presets Birdy ships (Anycubic Mega X…) once; later edits by the user are kept. */
+/** Writes the presets Boaty ships (Anycubic Mega X…) once; later edits by the user are kept. */
 let seeded = false
 async function seedBuiltIns() {
   if (seeded) return

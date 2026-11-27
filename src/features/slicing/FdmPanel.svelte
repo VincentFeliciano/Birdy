@@ -11,9 +11,12 @@
   import { cancelUsb, pauseUsb, usb, usbActive } from './usb.svelte'
   import {
     cancelSlice,
+    chooseGcodeFolder,
     chooseMachine,
     choosePrinter,
     clearOverrides,
+    folderLabel,
+    loadGcodeFolder,
     importFrom,
     installEngine,
     loadCatalog,
@@ -33,6 +36,7 @@
   let timer: ReturnType<typeof setInterval> | null = null
   onMount(() => {
     timer = setInterval(() => (now = Date.now()), 500)
+    void loadGcodeFolder()
   })
   onDestroy(() => {
     if (timer) clearInterval(timer)
@@ -45,7 +49,7 @@
   const result = $derived(sl.result?.ok ? sl.result : null)
   const summary = $derived(result?.summary)
 
-  // Your own printers ("My printers", "Imported") first, then every brand. Printers Birdy adds to a
+  // Your own printers ("My printers", "Imported") first, then every brand. Printers Boaty adds to a
   // brand (Anycubic Mega X) are listed under that brand.
   const vendors = $derived.by(() => {
     if (!catalog) return [] as string[]
@@ -114,8 +118,8 @@
       <section>
         <h3 class="hud-label">Slicing engine</h3>
         <p class="body">
-          Birdy slices with OrcaSlicer’s open-source engine (AGPL-3.0). Download it once ({fmtBytes(engine.downloadSize)}) from OrcaSlicer’s
-          official GitHub release. Birdy checks the file’s published SHA-256 before installing it.
+          Boaty slices with OrcaSlicer’s open-source engine (AGPL-3.0). Download it once ({fmtBytes(engine.downloadSize)}) from OrcaSlicer’s
+          official GitHub release. Boaty checks the file’s published SHA-256 before installing it.
         </p>
         {#if engine.installing}
           <div class="bar"><span style:width={pct(engine.progress ?? 0)}></span></div>
@@ -127,7 +131,7 @@
           <button class="primary wide" onclick={installEngine}><Icon name="download" size={15} />Download engine (OrcaSlicer {engine.version})</button>
         {/if}
         {#if engine.error}<p class="err">{engine.error}</p>{/if}
-        <p class="hint small">Already have OrcaSlicer installed? Birdy uses it automatically.</p>
+        <p class="hint small">Already have OrcaSlicer installed? Boaty uses it automatically.</p>
       </section>
     {:else}
       <section>
@@ -292,9 +296,18 @@
               {#if sl.preview.loading}<span class="spinner"></span>{:else}<Icon name="layers" size={14} />{/if}
               {sl.preview.on ? 'Show model' : 'Show toolpaths'}
             </button>
-            <button class="ghost" onclick={saveGcode}><Icon name="save" size={14} />Save G-code</button>
+            {#if sl.gcodeFolder}
+              <button class="ghost" title="Save into {sl.gcodeFolder}" onclick={() => saveGcode()}><Icon name="save" size={14} />Save to {folderLabel(sl.gcodeFolder)}</button>
+            {:else}
+              <button class="ghost" onclick={() => saveGcode(true)}><Icon name="save" size={14} />Save G-code</button>
+            {/if}
           </div>
           <p class="hint small mono">{result.gcodeName} · {fmtBytes(result.gcodeSize ?? 0)}</p>
+          <p class="hint small save-to">
+            {#if sl.gcodeFolder}Saves to <span class="mono" title={sl.gcodeFolder}>{sl.gcodeFolder}</span> ·{/if}
+            <button class="link" onclick={chooseGcodeFolder}>{sl.gcodeFolder ? 'Change folder' : 'Choose a folder (e.g. USB stick)'}</button>
+            · <button class="link" onclick={() => saveGcode(true)}>Save as…</button>
+          </p>
         </section>
 
         <section>
@@ -322,7 +335,7 @@
             {#if sl.stale}<p class="hint small">Slice again first: the model changed.</p>{/if}
             {#if sl.sendResult}<p class={sl.sendResult.ok ? 'ok' : 'err'}>{sl.sendResult.detail}</p>{/if}
           {:else}
-            <p class="hint">Add a printer on your network (OctoPrint, Klipper/Moonraker, PrusaLink) or one on a USB cable to print straight from Birdy.</p>
+            <p class="hint">Add a printer on your network (OctoPrint, Klipper/Moonraker, PrusaLink) or one on a USB cable to print straight from Boaty.</p>
           {/if}
         </section>
       {/if}
@@ -350,7 +363,7 @@
               </button>
               <button class="ghost danger" disabled={usb.status === 'stopping'} onclick={cancelUsb}><Icon name="stop" size={14} />Stop</button>
             </div>
-            <p class="hint small">Keep Birdy open until the print finishes.</p>
+            <p class="hint small">Keep Boaty open until the print finishes.</p>
           {/if}
           {#if usb.message}<p class={usb.status === 'error' ? 'err' : 'hint'}>{usb.message}</p>{/if}
         </section>
@@ -370,7 +383,7 @@
         </button>
       {/if}
       <p class="note">
-        Engine: OrcaSlicer {engine.source === 'birdy' ? engine.version : ''} ({engine.source === 'birdy' ? 'installed by Birdy' : engine.source === 'installed' ? 'your OrcaSlicer' : 'development copy'}), AGPL-3.0
+        Engine: OrcaSlicer {engine.source === 'birdy' ? engine.version : ''} ({engine.source === 'birdy' ? 'installed by Boaty' : engine.source === 'installed' ? 'your OrcaSlicer' : 'development copy'}), AGPL-3.0
       </p>
     </footer>
   {/if}
@@ -444,6 +457,16 @@
     margin: 6px 0 0;
     font-size: 12px;
     color: var(--muted);
+  }
+  .save-to {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .save-to .mono {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .hint.small,
   .small {

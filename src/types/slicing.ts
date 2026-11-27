@@ -11,7 +11,7 @@ export interface PresetRef {
   user?: boolean
   /** For an imported preset: the built-in preset it is based on. */
   base?: string
-  /** Made in Birdy (a custom printer or one Birdy ships), so it can be edited. */
+  /** Made in Boaty (a custom printer or one Boaty ships), so it can be edited. */
   custom?: boolean
   /** A printer's safe maximum temperatures (°C), when known. */
   maxNozzle?: number
@@ -70,7 +70,7 @@ export interface EngineState {
   installing: boolean
   progress: number | null
   error: string | null
-  /** Download size of the engine Birdy can install, in bytes. */
+  /** Download size of the engine Boaty can install, in bytes. */
   downloadSize: number
 }
 
@@ -208,7 +208,7 @@ export interface PrinterStatus {
   hotendTarget: number | null
   bed: number | null
   bedTarget: number | null
-  /** The printer has a webcam Birdy knows how to take a snapshot from. */
+  /** The printer has a webcam Boaty knows how to take a snapshot from. */
   camera: boolean
 }
 

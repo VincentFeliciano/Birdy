@@ -2,7 +2,7 @@ import type { ModelsEntry, ModelsImport } from '../../types/ipc'
 import { addToPlate, openModelFile, ws } from '../workspace/store.svelte'
 import { queueThumbs } from './thumbs'
 
-/** The Models panel: browsing Documents/Birdy/Models. */
+/** The Models panel: browsing Documents/Boaty/Models. */
 export const models = $state({
   open: localStorage.getItem('birdy.modelsOpen') === '1',
   /** Folder being shown, relative to the Models folder ('' = top). */

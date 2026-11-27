@@ -376,7 +376,7 @@
           <label class="field">
             <span>Hottest nozzle <i>°C</i></span>
             <input type="number" min="150" max="500" bind:value={maxNozzle} />
-            <em>Birdy warns above this.</em>
+            <em>Boaty warns above this.</em>
           </label>
           <label class="field">
             <span>Heated bed</span>

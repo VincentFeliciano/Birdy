@@ -13,19 +13,19 @@
   const steps: Step[] = [
     {
       target: null,
-      title: 'Welcome to Birdy',
+      title: 'Welcome to Boaty',
       text: 'A web browser built for 3D printing: find a model, check it, fix it, slice it and send it to your printer without juggling folders. This takes under a minute; press Skip any time.',
     },
     {
       target: '.address',
       title: 'Search for models',
-      text: 'Type here to search Google for 3D models (the menu on the left picks models, ideas or help), or enter any site such as Printables or Thingiverse. On a model page, "Get in Birdy" shows up here.',
+      text: 'Type here to search Google for 3D models (the menu on the left picks models, ideas or help), or enter any site such as Printables or Thingiverse. On a model page, "Get in Boaty" shows up here.',
       layout: 'split',
     },
     {
       target: '.ws-col',
       title: 'Your workspace',
-      text: 'Models you download open here by themselves. You can also drop STL, 3MF, OBJ, GLB, PLY or WRL files anywhere in the window. Birdy checks each one for printing problems straight away.',
+      text: 'Models you download open here by themselves. You can also drop STL, 3MF, OBJ, GLB, PLY or WRL files anywhere in the window. Boaty checks each one for printing problems straight away.',
       layout: 'split',
     },
     {

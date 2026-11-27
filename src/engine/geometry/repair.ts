@@ -20,6 +20,10 @@ export interface RepairSummary {
   removedDuplicates: number
   flippedFaces: number
   holesFilled: number
+  /** Corners on another face's edge that were stitched in (T-junction cracks). */
+  tJunctionsClosed: number
+  /** Places where two parts met face to face and the hidden faces between them were removed. */
+  internalWalls: number
   facesAdded: number
   invertedParts: number
   remainingOpenEdges: number
@@ -36,6 +40,9 @@ export interface RepairOptions {
   /** Vertices closer than this (mm) are merged. */
   weld?: number
 }
+
+/** A corner this close (mm) to another face's open edge is stitched into it. */
+const TJ_TOL = 0.01
 
 /** Undirected edge -> faces using it. */
 function edgeFaces(tri: number[], nVerts: number) {
@@ -77,6 +84,8 @@ export function repairMesh(p: Float32Array, opts: RepairOptions = {}): RepairRes
     removedDuplicates: 0,
     flippedFaces: 0,
     holesFilled: 0,
+    tJunctionsClosed: 0,
+    internalWalls: 0,
     facesAdded: 0,
     invertedParts: 0,
     remainingOpenEdges: 0,
@@ -158,6 +167,87 @@ export function repairMesh(p: Float32Array, opts: RepairOptions = {}): RepairRes
     tri = next
   }
 
+  // 3b. Internal walls: two parts meeting face to face, each keeping its own face there (often
+  // triangulated differently, so step 3 misses them). Their outline edges join four faces.
+  removeInternalWalls()
+
+  function removeInternalWalls() {
+    const nV = vx.length / 3
+    const edges = edgeFaces(tri, nV)
+    const faces = tri.length / 3
+    const normal = (f: number) => {
+      const a = tri[f * 3]! * 3, b = tri[f * 3 + 1]! * 3, c = tri[f * 3 + 2]! * 3
+      const ux = vx[b]! - vx[a]!, uy = vx[b + 1]! - vx[a + 1]!, uz = vx[b + 2]! - vx[a + 2]!
+      const wx = vx[c]! - vx[a]!, wy = vx[c + 1]! - vx[a + 1]!, wz = vx[c + 2]! - vx[a + 2]!
+      const n = [uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx]
+      const l = Math.hypot(n[0]!, n[1]!, n[2]!) || 1
+      return [n[0]! / l, n[1]! / l, n[2]! / l, vx[a]!, vx[a + 1]!, vx[a + 2]!] as const
+    }
+    const third = (f: number, u: number, v: number) => {
+      for (let e = 0; e < 3; e++) {
+        const w = tri[f * 3 + e]!
+        if (w !== u && w !== v) return w
+      }
+      return -1
+    }
+    const wall = new Uint8Array(faces)
+    let any = false
+    for (const [k, list] of edges) {
+      if (list.length < 4 || list.length % 2) continue
+      const u = Math.floor(k / nV), v = k % nV
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const f = list[i]!, g = list[j]!
+          const nf = normal(f), ng = normal(g)
+          if (nf[0] * ng[0] + nf[1] * ng[1] + nf[2] * ng[2] > -0.9999) continue
+          // Same side of the shared edge, so the two faces overlap rather than fold back.
+          const wf = third(f, u, v), wg = third(g, u, v)
+          const off = (w: number) => (vx[w * 3]! - nf[3]) * nf[0] + (vx[w * 3 + 1]! - nf[4]) * nf[1] + (vx[w * 3 + 2]! - nf[5]) * nf[2]
+          if (Math.abs(off(wg)) > 1e-4) continue
+          const ex = vx[v * 3]! - vx[u * 3]!, ey = vx[v * 3 + 1]! - vx[u * 3 + 1]!, ez = vx[v * 3 + 2]! - vx[u * 3 + 2]!
+          const side = (w: number) => {
+            const px = vx[w * 3]! - vx[u * 3]!, py = vx[w * 3 + 1]! - vx[u * 3 + 1]!, pz = vx[w * 3 + 2]! - vx[u * 3 + 2]!
+            return (ey * pz - ez * py) * nf[0] + (ez * px - ex * pz) * nf[1] + (ex * py - ey * px) * nf[2]
+          }
+          if (side(wf) * side(wg) <= 0) continue
+          wall[f] = wall[g] = 1
+          any = true
+        }
+      }
+    }
+    if (!any) return
+    // Spread across each wall's inside (manifold edges, same plane and facing).
+    const queue: number[] = []
+    for (let f = 0; f < faces; f++) if (wall[f]) queue.push(f)
+    while (queue.length) {
+      const f = queue.pop()!
+      const nf = normal(f)
+      for (let e = 0; e < 3; e++) {
+        const u = tri[f * 3 + e]!, v = tri[f * 3 + ((e + 1) % 3)]!
+        const list = edges.get(u < v ? u * nV + v : v * nV + u)!
+        if (list.length !== 2) continue
+        const g = list[0] === f ? list[1]! : list[0]!
+        if (wall[g]) continue
+        const ng = normal(g)
+        if (nf[0] * ng[0] + nf[1] * ng[1] + nf[2] * ng[2] < 0.9999) continue
+        wall[g] = 1
+        queue.push(g)
+      }
+    }
+    const next: number[] = []
+    for (let f = 0; f < faces; f++) if (!wall[f]) next.push(tri[f * 3]!, tri[f * 3 + 1]!, tri[f * 3 + 2]!)
+    // Keep it only when it opens nothing up.
+    const openCount = (t: number[]) => {
+      let n = 0
+      for (const l of edgeFaces(t, nV).values()) if (l.length === 1) n++
+      return n
+    }
+    if (openCount(next) > openCount(tri)) return
+    summary.removedDuplicates += faces - next.length / 3
+    summary.internalWalls++
+    tri = next
+  }
+
   // 4. Consistent winding: walk each part across manifold edges, flipping faces that disagree.
   {
     const nV = vx.length / 3
@@ -190,7 +280,117 @@ export function repairMesh(p: Float32Array, opts: RepairOptions = {}): RepairRes
     }
   }
 
-  // 5. Fill holes.
+  // 5a. T-junction cracks: a boundary corner sitting on another face's boundary edge. Filling
+  // such a crack gives zero-area triangles, so instead split that edge's face at the corner.
+  for (let round = 0; round < 4; round++) {
+    const merged = collapseShortOpenEdges()
+    if (!splitTJunctions() && !merged) break
+  }
+
+  /** Merges the ends of open edges shorter than TJ_TOL (corners that just missed the weld). */
+  function collapseShortOpenEdges(): number {
+    const nV = vx.length / 3
+    const edges = edgeFaces(tri, nV)
+    const to = new Map<number, number>()
+    const root = (v: number) => {
+      while (to.has(v)) v = to.get(v)!
+      return v
+    }
+    for (const [k, list] of edges) {
+      if (list.length !== 1) continue
+      const u = root(Math.floor(k / nV)), v = root(k % nV)
+      if (u === v) continue
+      const d = Math.hypot(vx[u * 3]! - vx[v * 3]!, vx[u * 3 + 1]! - vx[v * 3 + 1]!, vx[u * 3 + 2]! - vx[v * 3 + 2]!)
+      if (d <= TJ_TOL) to.set(Math.max(u, v), Math.min(u, v))
+    }
+    if (!to.size) return 0
+    const next: number[] = []
+    for (let f = 0; f < tri.length / 3; f++) {
+      const a = root(tri[f * 3]!), b = root(tri[f * 3 + 1]!), c = root(tri[f * 3 + 2]!)
+      if (a === b || b === c || a === c || area2(a, b, c) < 1e-12) continue
+      next.push(a, b, c)
+    }
+    tri = next
+    summary.tJunctionsClosed += to.size
+    return to.size
+  }
+
+  function splitTJunctions(): number {
+    const nV = vx.length / 3
+    const edges = edgeFaces(tri, nV)
+    const bEdges: [number, number, number][] = [] // face, u, v
+    const bVerts = new Set<number>()
+    for (let f = 0; f < tri.length / 3; f++) {
+      for (let e = 0; e < 3; e++) {
+        const u = tri[f * 3 + e]!
+        const v = tri[f * 3 + ((e + 1) % 3)]!
+        if (edges.get(u < v ? u * nV + v : v * nV + u)!.length !== 1) continue
+        bEdges.push([f, u, v])
+        bVerts.add(u)
+        bVerts.add(v)
+      }
+    }
+    if (!bEdges.length) return 0
+    // Spatial hash of boundary corners.
+    const cell = 1
+    const grid = new Map<string, number[]>()
+    const key = (x: number, y: number, z: number) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`
+    for (const v of bVerts) {
+      const k = key(vx[v * 3]!, vx[v * 3 + 1]!, vx[v * 3 + 2]!)
+      const list = grid.get(k)
+      if (list) list.push(v)
+      else grid.set(k, [v])
+    }
+    const splits = new Map<number, { u: number; v: number; on: { t: number; m: number }[] }>()
+    for (const [f, u, v] of bEdges) {
+      if (splits.has(f)) continue
+      const ax = vx[u * 3]!, ay = vx[u * 3 + 1]!, az = vx[u * 3 + 2]!
+      const dx = vx[v * 3]! - ax, dy = vx[v * 3 + 1]! - ay, dz = vx[v * 3 + 2]! - az
+      const len2 = dx * dx + dy * dy + dz * dz
+      if (len2 < 1e-12) continue
+      const len = Math.sqrt(len2)
+      const tol = Math.min(TJ_TOL, len * 0.01)
+      const on: { t: number; m: number }[] = []
+      const lo = [Math.min(ax, ax + dx), Math.min(ay, ay + dy), Math.min(az, az + dz)].map((c) => Math.floor((c - tol) / cell))
+      const hi = [Math.max(ax, ax + dx), Math.max(ay, ay + dy), Math.max(az, az + dz)].map((c) => Math.floor((c + tol) / cell))
+      // Long edges span many cells; skip those (rare, and the fill below still tries them).
+      if ((hi[0]! - lo[0]! + 1) * (hi[1]! - lo[1]! + 1) * (hi[2]! - lo[2]! + 1) > 4096) continue
+      for (let i = lo[0]!; i <= hi[0]!; i++) {
+        for (let j = lo[1]!; j <= hi[1]!; j++) {
+          for (let k = lo[2]!; k <= hi[2]!; k++) {
+            for (const m of grid.get(`${i},${j},${k}`) ?? []) {
+              if (m === u || m === v) continue
+              const px = vx[m * 3]! - ax, py = vx[m * 3 + 1]! - ay, pz = vx[m * 3 + 2]! - az
+              const t = (px * dx + py * dy + pz * dz) / len2
+              if (t * len <= tol || (1 - t) * len <= tol) continue
+              const ex = px - t * dx, ey = py - t * dy, ez = pz - t * dz
+              if (ex * ex + ey * ey + ez * ez <= tol * tol) on.push({ t, m })
+            }
+          }
+        }
+      }
+      if (on.length) splits.set(f, { u, v, on: on.sort((a, b) => a.t - b.t) })
+    }
+    if (!splits.size) return 0
+    const next: number[] = []
+    for (let f = 0; f < tri.length / 3; f++) {
+      const s = splits.get(f)
+      if (!s) {
+        next.push(tri[f * 3]!, tri[f * 3 + 1]!, tri[f * 3 + 2]!)
+        continue
+      }
+      // Rotate so the face reads u, v, w; then fan from w along u -> m... -> v.
+      let w = -1
+      for (let e = 0; e < 3; e++) if (tri[f * 3 + e] === s.u) w = tri[f * 3 + ((e + 2) % 3)]!
+      const chain = [s.u, ...s.on.map((o) => o.m), s.v]
+      for (let i = 0; i + 1 < chain.length; i++) next.push(chain[i]!, chain[i + 1]!, w)
+      summary.tJunctionsClosed += s.on.length
+    }
+    tri = next
+    return splits.size
+  }
+
+  // 5b. Fill holes.
   {
     const nV = vx.length / 3
     const edges = edgeFaces(tri, nV)
@@ -291,12 +491,14 @@ export function repairMesh(p: Float32Array, opts: RepairOptions = {}): RepairRes
       vx.push(cx, cy, cz)
       for (let i = 0; i < n; i++) added.push(loop[(i + 1) % n]!, loop[i]!, c)
     }
+    let kept = 0
     for (let i = 0; i < added.length; i += 3) {
       if (area2(added[i]!, added[i + 1]!, added[i + 2]!) < 1e-12) continue
       tri.push(added[i]!, added[i + 1]!, added[i + 2]!)
-      summary.facesAdded++
+      kept++
     }
-    summary.holesFilled++
+    summary.facesAdded += kept
+    if (kept) summary.holesFilled++
   }
 
   // 6. Inside-out parts, and what could not be fixed.
@@ -376,8 +578,10 @@ export function describeRepair(s: RepairSummary): string {
   const parts: string[] = []
   const n = (v: number, one: string, many = `${one}s`) => `${v.toLocaleString()} ${v === 1 ? one : many}`
   if (s.holesFilled) parts.push(`filled ${n(s.holesFilled, 'hole')}`)
+  if (s.tJunctionsClosed) parts.push(`closed ${n(s.tJunctionsClosed, 'crack')} between faces`)
   if (s.flippedFaces) parts.push(`turned ${n(s.flippedFaces, 'face')} the right way`)
   if (s.invertedParts) parts.push(`turned ${n(s.invertedParts, 'inside-out part')} right side out`)
+  if (s.internalWalls) parts.push(`joined ${n(s.internalWalls, 'pair', 'pairs')} of parts that met face to face`)
   if (s.removedDuplicates) parts.push(`removed ${n(s.removedDuplicates, 'duplicate face')}`)
   if (s.removedDegenerate) parts.push(`removed ${n(s.removedDegenerate, 'zero-area triangle')}`)
   if (s.removedInvalid) parts.push(`removed ${n(s.removedInvalid, 'corrupt triangle')}`)

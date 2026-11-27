@@ -202,7 +202,7 @@
         <div class="dropzone" aria-hidden="true">
           <div class="dz-inner">
             <Icon name="download" size={34} />
-            <span class="dz-t">Drop to open in Birdy</span>
+            <span class="dz-t">Drop to open in Boaty</span>
             <span class="dz-d mono">STL · 3MF · OBJ · GLB · glTF · PLY</span>
           </div>
         </div>

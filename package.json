@@ -1,6 +1,6 @@
 {
   "name": "birdy",
-  "productName": "Birdy",
+  "productName": "Boaty",
   "version": "0.4.3",
   "description": "A desktop web browser that becomes a 3D printing workspace when you open a model.",
   "main": "./out/main/index.js",
@@ -12,7 +12,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json && tsc -p tsconfig.node.json --noEmit",
     "icon": "electron scripts/make-icon.cjs",
     "dist": "electron-vite build && electron-builder --win nsis --x64 --publish never",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/printCheck.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/slicing.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/serial.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/user-agent.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/repair.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/models.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/resin.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/arrange.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/orient.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/cost.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/modelSites.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/sdcp.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/supports.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/settle.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/formats.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/analysis.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/shells.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/csg.test.mts && node tests/solidify.test.mts && node tests/chop.test.mts"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/printCheck.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/slicing.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/serial.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/user-agent.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/rename.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/repair.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/models.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/resin.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/arrange.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/orient.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/cost.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/modelSites.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/sdcp.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/supports.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/settle.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/formats.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/analysis.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/shells.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/csg.test.mts && node tests/solidify.test.mts && node tests/chop.test.mts"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.2",
@@ -33,7 +33,7 @@
   "author": "Vincent Feliciano",
   "build": {
     "appId": "com.birdy.browser",
-    "productName": "Birdy",
+    "productName": "Boaty",
     "copyright": "Copyright Â© 2026 Vincent Feliciano",
     "directories": {
       "output": "release",
@@ -54,7 +54,7 @@
         }
       ],
       "icon": "build/icon.png",
-      "artifactName": "Birdy-Setup-${version}.${ext}"
+      "artifactName": "Boaty-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -62,8 +62,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Birdy",
-      "uninstallDisplayName": "Birdy",
+      "shortcutName": "Boaty",
+      "uninstallDisplayName": "Boaty",
       "packElevateHelper": false,
       "include": "build/installer.nsh"
     },

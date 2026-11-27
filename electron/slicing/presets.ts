@@ -105,7 +105,7 @@ export function overrideKeys(kind: PresetKind, o: SliceOverrides): Record<string
 }
 
 /**
- * The preset file Birdy hands the engine for one slice. It inherits the chosen system preset
+ * The preset file Boaty hands the engine for one slice. It inherits the chosen system preset
  * (or carries an imported user preset's own settings) and adds the overrides on top.
  */
 export function buildJobPreset(
@@ -122,7 +122,7 @@ export function buildJobPreset(
   Object.assign(out, overrideKeys(kind, overrides))
   // The engine refuses a process or filament made for another printer. People pick those on
   // purpose ("Show presets made for other printers"), and a custom printer's own presets name
-  // a printer it only inherits from, so Birdy lifts the restriction for its own job files.
+  // a printer it only inherits from, so Boaty lifts the restriction for its own job files.
   if (kind !== 'machine') {
     out.compatible_printers = []
     out.compatible_printers_condition = ''

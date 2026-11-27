@@ -1,4 +1,4 @@
-// Resin (MSLA) printers and the exposure settings Birdy slices with.
+// Resin (MSLA) printers and the exposure settings Boaty slices with.
 
 export interface ResinPrinter {
   id: string

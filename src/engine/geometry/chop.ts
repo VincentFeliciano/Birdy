@@ -1,5 +1,5 @@
 // Split to fit: cuts a model that's too big for the printer into pieces that each fit, and adds
-// joiners on the cut faces so the pieces line up when glued. Written for Birdy; the approach takes
+// joiners on the cut faces so the pieces line up when glued. Written for Boaty; the approach takes
 // ideas from published work on the problem: balanced grid cuts that leave no slivers, a search over
 // cut planes scored by piece count and fit (as in the "Chopper" paper), and connectors placed only
 // where the cut face has room for them, with a clearance gap per side.

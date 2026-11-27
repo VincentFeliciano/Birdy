@@ -19,7 +19,7 @@ export interface ResinWorkerJob {
 }
 
 export interface ResinWorkerOutput extends ResinOutput {
-  /** Supports Birdy added: how many, how many stand on the model, the lift, and their triangles for the 3D view. */
+  /** Supports Boaty added: how many, how many stand on the model, the lift, and their triangles for the 3D view. */
   support?: { count: number; onModel: number; lift: number; preview: Float32Array }
 }
 

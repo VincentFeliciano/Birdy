@@ -114,7 +114,7 @@ export async function chooseSlicer(win: BrowserWindow): Promise<SlicersState> {
 }
 
 /**
- * Writes the model to Birdy/Exports/Slicer, confirms the file is complete, then starts the
+ * Writes the model to Boaty/Exports/Slicer, confirms the file is complete, then starts the
  * chosen slicer with that one file as its only argument (no shell, no other input).
  */
 export async function openInSlicer(req: SlicerHandoff, exportsDir: string): Promise<SlicerHandoffResult> {

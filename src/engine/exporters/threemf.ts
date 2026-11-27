@@ -46,7 +46,7 @@ function meshXml(p: Float32Array) {
   return { verts, tris }
 }
 
-export function write3mf(parts: ThreeMFPart[], title = 'Birdy model'): Uint8Array {
+export function write3mf(parts: ThreeMFPart[], title = 'Boaty model'): Uint8Array {
   const colored = parts.filter((p) => p.color)
   const colours = [...new Set(colored.map((p) => p.color!.toUpperCase()))]
   const res: string[] = []
@@ -67,7 +67,7 @@ export function write3mf(parts: ThreeMFPart[], title = 'Birdy model'): Uint8Arra
   const model =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">` +
-    `<metadata name="Title">${esc(title)}</metadata><metadata name="Application">Birdy</metadata>` +
+    `<metadata name="Title">${esc(title)}</metadata><metadata name="Application">Boaty</metadata>` +
     `<resources>${res.join('')}</resources><build>${items.join('')}</build></model>`
   return zipSync({
     '[Content_Types].xml': strToU8(

@@ -3,15 +3,16 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { basename, extname, join, relative, isAbsolute } from 'node:path'
+import { workspaceRoot } from './rename-migration'
 import { EXPORT_FORMATS, formatFromName, MODEL_FORMATS, type ModelFile, type SaveRequest, type SaveResult } from '../src/types/ipc'
 
 export const MAX_MODEL_BYTES = 512 * 1024 * 1024
 
-/** Root of the local workspace: Documents/Birdy/{Downloads,Exports,Library}. */
+/** Root of the local workspace: Documents/Boaty/{Downloads,Exports,Library,Models}. */
 export function workspaceDirs() {
-  // Development runs can work in a scratch folder instead of the real Documents/Birdy.
+  // Development runs can work in a scratch folder instead of the real Documents/Boaty.
   const devRoot = !app.isPackaged ? process.env['BIRDY_WORKSPACE'] : undefined
-  const root = devRoot || join(app.getPath('documents'), 'Birdy')
+  const root = devRoot || workspaceRoot(app.getPath('documents'))
   const dirs = { root, downloads: join(root, 'Downloads'), exports: join(root, 'Exports'), library: join(root, 'Library'), models: join(root, 'Models') }
   try {
     mkdirSync(dirs.downloads, { recursive: true })
@@ -20,7 +21,7 @@ export function workspaceDirs() {
     mkdirSync(dirs.models, { recursive: true })
   } catch {
     const fallback = app.getPath('downloads')
-    return { root: fallback, downloads: fallback, exports: fallback, library: fallback, models: join(fallback, 'Birdy Models') }
+    return { root: fallback, downloads: fallback, exports: fallback, library: fallback, models: join(fallback, 'Boaty Models') }
   }
   return dirs
 }

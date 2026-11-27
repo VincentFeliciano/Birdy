@@ -1,7 +1,7 @@
 import type { Api } from './ipc'
 
 declare global {
-  /** The part of the Web Serial API Birdy uses for USB printing. */
+  /** The part of the Web Serial API Boaty uses for USB printing. */
   interface BirdySerialPort {
     open(options: { baudRate: number; bufferSize?: number }): Promise<void>
     close(): Promise<void>

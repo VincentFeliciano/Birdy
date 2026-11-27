@@ -16,7 +16,7 @@ import {
 
 /**
  * Reads the printer, process and filament the user last used in another slicer and turns them
- * into Birdy slice settings. Only reads those slicers' own settings folders; never writes to them.
+ * into Boaty slice settings. Only reads those slicers' own settings folders; never writes to them.
  */
 const appData = () => process.env['APPDATA'] ?? ''
 
@@ -87,7 +87,7 @@ async function importOrcaLike(source: ImportSource, dir: string, confName: strin
         const name = typeof j.name === 'string' && j.name ? j.name : basename(file, '.json')
         if (imported[kind].has(name)) continue
         const parent = typeof j.inherits === 'string' ? listOf(catalog, kind).find((p) => p.name === j.inherits) : undefined
-        if (j.inherits && !parent) notes.push(`“${name}” is based on “${String(j.inherits)}”, which Birdy’s engine doesn’t have.`)
+        if (j.inherits && !parent) notes.push(`“${name}” is based on “${String(j.inherits)}”, which Boaty’s engine doesn’t have.`)
         await writeImported(kind, { ...j, name, birdy_vendor: parent?.vendor ?? 'Imported', birdy_source: source })
         imported[kind].add(name)
         count++
@@ -106,7 +106,7 @@ async function importOrcaLike(source: ImportSource, dir: string, confName: strin
   const settings: Partial<SliceSettings> = {}
   for (const k of KINDS) {
     if (known(k, want[k])) settings[k] = want[k] as string
-    else if (typeof want[k] === 'string' && want[k]) notes.push(`The selected ${k} “${want[k]}” isn’t available in Birdy’s engine.`)
+    else if (typeof want[k] === 'string' && want[k]) notes.push(`The selected ${k} “${want[k]}” isn’t available in Boaty’s engine.`)
   }
   const machine = catalog.machines.find((m) => m.name === settings.machine) ?? (settings.machine ? { name: settings.machine, vendor: 'Imported', kind: 'machine' as const } : undefined)
   if (settings.machine && !settings.process) settings.process = pickProcess(catalog.processes, machine)?.name
@@ -156,7 +156,7 @@ async function importPrusa(dir: string, catalog: PresetCatalog): Promise<ImportR
     settings.machine = made.name
     machine = made
     imported++
-    notes.push(`Birdy’s engine has no built-in profile for “${printerName}”, so it made one from your bed size and nozzle. Check its start G-code before printing.`)
+    notes.push(`Boaty’s engine has no built-in profile for “${printerName}”, so it made one from your bed size and nozzle. Check its start G-code before printing.`)
   }
   const o = overridesFromPrusa(print, filament)
   settings.process = (pickProcess(catalog.processes, machine, o.layerHeight) ?? anyProcess(catalog, machine))?.name
@@ -240,7 +240,7 @@ async function importCura(root: string, catalog: PresetCatalog): Promise<ImportR
     machine = await customMachine(catalog, `${name} (Cura)`, bed, values.machine_height, nozzle, values.machine_gcode_flavor?.toLowerCase().includes('klipper') ? 'klipper' : 'marlin', 'cura')
     settings.machine = machine.name
     imported++
-    notes.push(`Birdy’s engine has no built-in profile for “${name}”, so it made one from your bed size and nozzle. Check its start G-code before printing.`)
+    notes.push(`Boaty’s engine has no built-in profile for “${name}”, so it made one from your bed size and nozzle. Check its start G-code before printing.`)
   }
   const o: SliceOverrides = clean({
     layerHeight: settingNumber(values.layer_height),
@@ -255,7 +255,7 @@ async function importCura(root: string, catalog: PresetCatalog): Promise<ImportR
   settings.process = (pickProcess(catalog.processes, machine, o.layerHeight) ?? anyProcess(catalog, machine))?.name
   settings.filament = pickFilament(catalog.filaments, 'PLA')?.name
   settings.overrides = o
-  if (o.nozzleTemp === undefined) notes.push('Cura keeps temperatures in its material profiles, so the filament uses Birdy’s generic PLA temperatures.')
+  if (o.nozzleTemp === undefined) notes.push('Cura keeps temperatures in its material profiles, so the filament uses Boaty’s generic PLA temperatures.')
   return { ok: true, source: 'cura', settings, importedPresets: imported, notes }
 }
 

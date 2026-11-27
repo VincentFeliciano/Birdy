@@ -8,7 +8,7 @@ import { sdcpStart, sdcpStatus, sdcpTest, sdcpUpload } from './sdcp'
 import type { PrinterInfo, PrinterInput, PrinterKind, PrinterState, PrinterStatus, PrinterTestResult, SendResult } from '../src/types/slicing'
 
 /**
- * Printers on the local network. Birdy talks to them only at the address the user typed.
+ * Printers on the local network. Boaty talks to them only at the address the user typed.
  * API keys and passwords are encrypted with Windows' per-user data protection (safeStorage)
  * and never sent to the app UI.
  */
@@ -302,7 +302,7 @@ export async function printerSnapshot(id: string): Promise<string | null> {
     else if (p.kind === 'moonraker') {
       const cams = (await call(p, 'GET', '/server/webcams/list', undefined, STATUS_TIMEOUT_MS)) as { result?: { webcams?: { snapshot_url?: string }[] } }
       const url = cams.result?.webcams?.find((w) => w.snapshot_url)?.snapshot_url
-      // Only paths on the printer itself: Birdy talks to no other address.
+      // Only paths on the printer itself: Boaty talks to no other address.
       if (url && url.startsWith('/') && !url.startsWith('//')) path = url
     }
     if (!path) return null

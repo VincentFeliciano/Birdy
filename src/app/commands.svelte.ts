@@ -173,15 +173,15 @@ export function commands(): Command[] {
     { id: 'slice', title: 'Slice for a filament printer', group: 'Slice', words: 'fdm gcode orca', when: hasModel, run: () => { setSliceMode('fdm'); sidebar('slice') } },
     { id: 'slice-resin', title: 'Slice for a resin printer', group: 'Slice', words: 'goo elegoo saturn mars sla msla', when: hasModel, run: () => { setSliceMode('resin'); sidebar('slice') } },
 
-    { id: 'theme', title: 'Change the accent colour…', group: 'Birdy', words: 'theme colour color neon', run: () => (theme.panelOpen = true) },
-    { id: 'accent-next', title: 'Next accent colour', group: 'Birdy', words: 'theme cycle', run: cycleAccent },
-    { id: 'updates', title: 'Check for updates', group: 'Birdy', words: 'version upgrade', run: checkForUpdates },
-    { id: 'tour', title: 'Take the tour', group: 'Birdy', words: 'help welcome intro guide', run: startTour },
-    { id: 'shortcuts', title: 'Keyboard shortcuts', group: 'Birdy', keys: '?', words: 'help keys', run: () => (ui.shortcuts = true) },
+    { id: 'theme', title: 'Change the accent colour…', group: 'Boaty', words: 'theme colour color neon', run: () => (theme.panelOpen = true) },
+    { id: 'accent-next', title: 'Next accent colour', group: 'Boaty', words: 'theme cycle', run: cycleAccent },
+    { id: 'updates', title: 'Check for updates', group: 'Boaty', words: 'version upgrade', run: checkForUpdates },
+    { id: 'tour', title: 'Take the tour', group: 'Boaty', words: 'help welcome intro guide', run: startTour },
+    { id: 'shortcuts', title: 'Keyboard shortcuts', group: 'Boaty', keys: '?', words: 'help keys', run: () => (ui.shortcuts = true) },
     {
       id: 'about',
-      title: 'About Birdy and credits',
-      group: 'Birdy',
+      title: 'About Boaty and credits',
+      group: 'Boaty',
       words: 'licence license orcaslicer',
       run: () => {
         ui.libraryTab = 'about'
@@ -189,7 +189,7 @@ export function commands(): Command[] {
       },
     },
   ]
-  for (const a of ACCENTS) list.push({ id: `accent-${a.id}`, title: `Accent: ${a.name}`, group: 'Birdy', words: 'theme colour color', run: () => applyAccent(a) })
+  for (const a of ACCENTS) list.push({ id: `accent-${a.id}`, title: `Accent: ${a.name}`, group: 'Boaty', words: 'theme colour color', run: () => applyAccent(a) })
   return list.filter((c) => !c.when || c.when())
 }
 
@@ -276,6 +276,6 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
   },
   {
     group: 'Files',
-    items: [['Drop files', 'Drop STL, 3MF, OBJ, GLB, glTF or PLY anywhere in Birdy to open them']],
+    items: [['Drop files', 'Drop STL, 3MF, OBJ, GLB, glTF or PLY anywhere in Boaty to open them']],
   },
 ]

@@ -10,7 +10,7 @@ import { absPath, importIntoModels, isAbsRel, isArchiveName, listModels, searchM
 const MAX_THUMB_BYTES = 400 * 1024
 
 /**
- * The Models folder (Documents/Birdy/Models): downloaded models are copied in and ZIPs unpacked,
+ * The Models folder (Documents/Boaty/Models): downloaded models are copied in and ZIPs unpacked,
  * and anything the user puts there shows up in the Models panel. Paths from the UI are relative
  * to this folder and checked to stay inside it.
  */

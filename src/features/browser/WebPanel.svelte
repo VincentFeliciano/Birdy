@@ -128,8 +128,8 @@
       {#if tab?.loading}<span class="loadbar"></span>{/if}
     </form>
     {#if page}
-      <button class="get" disabled={getting} title="Get this {page.siteName} model into Birdy" onclick={getModel}>
-        <Icon name="download" size={13} />Get in Birdy
+      <button class="get" disabled={getting} title="Get this {page.siteName} model into Boaty" onclick={getModel}>
+        <Icon name="download" size={13} />Get in Boaty
       </button>
     {/if}
     <button

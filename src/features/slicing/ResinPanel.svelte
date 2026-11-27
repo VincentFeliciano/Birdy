@@ -295,7 +295,7 @@
       <Icon name="layers" size={15} />{r ? 'Slice again' : 'Slice for resin'}
     </button>
   {/if}
-  <p class="note">Birdy’s own resin slicer · Elegoo .goo</p>
+  <p class="note">Boaty’s own resin slicer · Elegoo .goo</p>
 </footer>
 
 <style>

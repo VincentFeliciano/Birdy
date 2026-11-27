@@ -7,7 +7,7 @@ import type { HistoryEntry, HistoryInput } from '../src/types/ipc'
 const MAX_ENTRIES = 1000
 const MAX_THUMB = 60_000
 
-/** Print history: every file Birdy saved or sent to a printer, kept in userData/print-history.json. */
+/** Print history: every file Boaty saved or sent to a printer, kept in userData/print-history.json. */
 export class PrintHistory {
   private file = join(app.getPath('userData'), 'print-history.json')
   private entries: HistoryEntry[] = []
