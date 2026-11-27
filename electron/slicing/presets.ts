@@ -54,6 +54,8 @@ const withoutNozzle = (s: string) => s.replace(/\s*\d+(?:\.\d+)?\s*nozzle/i, '')
  */
 export function fitsMachine(preset: PresetRef, machine: PresetRef | undefined): boolean {
   if (!machine) return true
+  // A user's own preset made for this exact printer ("PLA @My Printer").
+  if (preset.user && preset.name.endsWith(`@${machine.name}`)) return true
   if (machine.user && machine.base) machine = { ...machine, name: machine.base }
   const at = preset.name.lastIndexOf('@')
   if (at < 0) return preset.vendor === machine.vendor || preset.vendor === 'OrcaFilamentLibrary'
@@ -118,6 +120,17 @@ export function buildJobPreset(
   }
   if (typeof out.inherits !== 'string') out.inherits = ''
   Object.assign(out, overrideKeys(kind, overrides))
+  // The engine refuses a process or filament made for another printer. People pick those on
+  // purpose ("Show presets made for other printers"), and a custom printer's own presets name
+  // a printer it only inherits from, so Birdy lifts the restriction for its own job files.
+  if (kind !== 'machine') {
+    out.compatible_printers = []
+    out.compatible_printers_condition = ''
+  }
+  if (kind === 'filament') {
+    out.compatible_prints = []
+    out.compatible_prints_condition = ''
+  }
   out.type = kind
   out.name = `Birdy job ${kind}`
   out.from = 'User'
@@ -254,4 +267,51 @@ export function settingNumber(v: string | undefined): number | undefined {
   if (v === undefined) return undefined
   const m = /-?\d+(?:\.\d+)?/.exec(v)
   return m ? Number(m[0]) : undefined
+}
+
+// ---- Resolved settings -----------------------------------------------------
+
+/**
+ * Every setting the engine used, from the config block at the end of its G-code
+ * (`; key = value`). Multi-line values such as start G-code come back with real newlines.
+ */
+export function parseConfigBlock(text: string): Record<string, string> {
+  const start = text.lastIndexOf('; CONFIG_BLOCK_START')
+  const end = text.lastIndexOf('; CONFIG_BLOCK_END')
+  const body = start >= 0 ? text.slice(start, end > start ? end : undefined) : text
+  const out: Record<string, string> = {}
+  for (const m of body.matchAll(/^; ([a-z0-9_]+) = ?(.*)$/gm)) {
+    out[m[1]!] = m[2]!.replace(/\r$/, '').replace(/\\n/g, '\n')
+  }
+  return out
+}
+
+/** Build volume (mm) from resolved settings: the printable area's extent and its height. */
+export function bedFromSettings(s: Record<string, string>): { x: number; y: number; z: number } | null {
+  const pts = (s.printable_area ?? s.bed_shape ?? '')
+    .split(',')
+    .map((p) => p.split('x').map(Number))
+    .filter((p) => p.length === 2 && p.every(Number.isFinite))
+  const z = Number(s.printable_height)
+  if (pts.length < 3 || !Number.isFinite(z)) return null
+  const xs = pts.map((p) => p[0]!)
+  const ys = pts.map((p) => p[1]!)
+  return { x: Math.max(...xs) - Math.min(...xs), y: Math.max(...ys) - Math.min(...ys), z }
+}
+
+/** The bed temperature keys a filament preset carries, one per plate type, each with a first-layer twin. */
+export const BED_TEMP_KEYS = ['hot_plate_temp', 'textured_plate_temp', 'cool_plate_temp', 'eng_plate_temp', 'textured_cool_plate_temp', 'supertack_plate_temp']
+
+/**
+ * A user's own preset file: the base preset it inherits, plus every changed setting as a string
+ * (the engine reads lists such as "0x0,300x0" or "4.5" from strings). Settings that belong to
+ * another kind of preset are ignored by the engine, so one set of edits can go to all three.
+ */
+export function customPreset(kind: PresetKind, name: string, inherits: string, values: Record<string, string>, meta: Record<string, unknown> = {}): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(values)) {
+    if (/^[a-z0-9_]{1,80}$/.test(k) && typeof v === 'string' && !['name', 'inherits', 'type', 'from', 'instantiation', 'version', 'setting_id', 'base_id', 'filament_id'].includes(k)) out[k] = v
+  }
+  for (const [k, v] of Object.entries(meta)) if (k.startsWith('birdy_')) out[k] = v
+  return { ...out, type: kind, name, inherits, from: 'User', instantiation: 'true' }
 }

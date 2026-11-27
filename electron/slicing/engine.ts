@@ -7,6 +7,9 @@ import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 import type {
+  CustomPresetData,
+  CustomPresetInput,
+  ResolveRequest,
   EngineSource,
   EngineState,
   PresetCatalog,
@@ -17,7 +20,8 @@ import type {
   SliceSaveResult,
 } from '../../src/types/slicing'
 import { MAX_MODEL_BYTES, sanitizeFileName } from '../file-system'
-import { buildJobPreset, parseCatalogLog, stripConfChecksum, summarizeGcode, withConfChecksum } from './presets'
+import { bedFromSettings, buildJobPreset, customPreset, parseCatalogLog, parseConfigBlock, pickFilament, pickProcess, stripConfChecksum, summarizeGcode, withConfChecksum } from './presets'
+import { BUILTIN_PRESETS } from './builtins'
 
 /**
  * The slicing engine is OrcaSlicer (AGPL-3.0), run as a separate command-line process.
@@ -213,7 +217,120 @@ export class SlicingEngine {
         await writeFile(cacheFile, JSON.stringify({ stamp: exeStamp, catalog: this.catalog }))
       }
     }
+    await seedBuiltIns()
     return withImported(this.catalog, await listImported())
+  }
+
+  private resolved = new Map<string, Record<string, string>>()
+  private probeQueue: Promise<unknown> = Promise.resolve()
+
+  /**
+   * Every setting the engine would use for these presets, read back from a tiny test slice.
+   * Probes run one at a time; results are kept until a custom preset changes.
+   */
+  async resolve(req: ResolveRequest): Promise<Record<string, string>> {
+    const catalog = await this.getCatalog()
+    const machine = catalog.machines.find((m) => m.name === req.machine)
+    if (!machine) throw new Error('Unknown printer.')
+    const own = (list: PresetRef[]) => list.find((p) => p.user && p.name.endsWith(`@${machine.name}`))?.name
+    const process = req.process && catalog.processes.some((p) => p.name === req.process) ? req.process : (own(catalog.processes) ?? pickProcess(catalog.processes, machine)?.name ?? catalog.processes.find((p) => !p.user)?.name)
+    const filament = req.filament && catalog.filaments.some((f) => f.name === req.filament) ? req.filament : pickFilament(catalog.filaments, 'PLA')?.name
+    if (!process || !filament) throw new Error('No process or filament preset to try this printer with.')
+    const key = JSON.stringify([machine.name, process, filament])
+    const hit = this.resolved.get(key)
+    if (hit) return hit
+    const job = this.probeQueue.then(() => this.probe({ machine: machine.name, process, filament }))
+    this.probeQueue = job.catch(() => {})
+    const settings = await job
+    this.resolved.set(key, settings)
+    return settings
+  }
+
+  private async probe(sel: Record<PresetKind, string>): Promise<Record<string, string>> {
+    const exe = this.requirePath()
+    const data = await this.prepareDataDir(exe)
+    const dir = join(app.getPath('temp'), `birdy-probe-${randomUUID()}`)
+    await mkdir(dir, { recursive: true })
+    try {
+      const stl = join(dir, 'probe.stl')
+      await writeFile(stl, tinyStl())
+      const files: string[] = []
+      for (const kind of KINDS) {
+        const userJson = await readImported(kind, sel[kind])
+        const preset = buildJobPreset(kind, { name: sel[kind], userJson: userJson ?? undefined }, {}, ENGINE.presetVersion)
+        preset.name = `Birdy probe ${kind}`
+        const file = join(data, 'user', 'default', kind, `Birdy probe ${kind}.json`)
+        await writeFile(file, JSON.stringify(preset, null, 2))
+        files.push(file)
+      }
+      const logFile = join(dir, 'engine.log')
+      const go = () => run(exe, [stl, '--datadir', data, '--load-settings', `${files[0]};${files[1]}`, '--load-filaments', files[2]!, '--arrange', '1', '--slice', '0', '--debug', '1', '--logfile', logFile, '--outputdir', dir], 120_000, true)
+      let out = await go()
+      const found = () => readdirSync(dir).find((n) => n.toLowerCase().endsWith('.gcode'))
+      if (!found() && (await fixLayerReset(files[0]!, logFile))) out = await go()
+      const gcode = found()
+      if (!gcode) throw new Error(explainEngineError(`${out}\n${await readFile(logFile, 'utf8').catch(() => '')}`))
+      const settings = parseConfigBlock(await readFile(join(dir, gcode), 'utf8'))
+      if (!Object.keys(settings).length) throw new Error('The engine did not report its settings.')
+      return settings
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  }
+
+  /** A printer's build volume (mm), or null when the engine can't tell. */
+  async machineBed(name: string): Promise<{ x: number; y: number; z: number } | null> {
+    const cacheFile = join(dataDir(), 'birdy-beds.json')
+    let cache: Record<string, { x: number; y: number; z: number }> = {}
+    try {
+      cache = JSON.parse(await readFile(cacheFile, 'utf8'))
+    } catch {
+      cache = {}
+    }
+    const own = (await this.getCatalog()).machines.find((m) => m.name === name)
+    if (!own?.user && cache[name]) return cache[name]!
+    const bed = bedFromSettings(await this.resolve({ machine: name }))
+    if (bed && !own?.user) {
+      cache[name] = bed
+      await writeFile(cacheFile, JSON.stringify(cache)).catch(() => {})
+    }
+    return bed
+  }
+
+  /** Saves presets made in the printer editor. */
+  async saveCustom(items: CustomPresetInput[]): Promise<PresetCatalog> {
+    for (const it of items) {
+      if (!KINDS.includes(it.kind) || typeof it.name !== 'string' || !it.name.trim() || it.name.length > 200 || typeof it.inherits !== 'string') throw new Error('A preset needs a name.')
+      const name = it.name.trim()
+      if (it.replaces && it.replaces !== name) await deleteImported(it.kind, it.replaces)
+      const meta: Record<string, unknown> = { birdy_vendor: 'My printers', birdy_custom: true }
+      const old = await readImported(it.kind, name)
+      if (old?.birdy_vendor) meta.birdy_vendor = old.birdy_vendor
+      if (it.maxNozzle !== undefined) meta.birdy_max_nozzle = it.maxNozzle
+      if (it.maxBed !== undefined) meta.birdy_max_bed = it.maxBed
+      if (it.heatedBed !== undefined) meta.birdy_heated_bed = it.heatedBed
+      await writeImported(it.kind, customPreset(it.kind, name, it.inherits, it.values ?? {}, meta))
+    }
+    this.resolved.clear()
+    return this.getCatalog()
+  }
+
+  async readCustom(kind: PresetKind, name: string): Promise<CustomPresetData | null> {
+    const j = await readImported(kind, name)
+    if (!j) return null
+    const values: Record<string, string> = {}
+    for (const [k, v] of Object.entries(j)) {
+      if (k.startsWith('birdy_') || ['name', 'inherits', 'type', 'from', 'instantiation', 'version'].includes(k)) continue
+      values[k] = Array.isArray(v) ? v.join(',') : String(v)
+    }
+    const n = (v: unknown) => (typeof v === 'number' ? v : undefined)
+    return { kind, name, inherits: String(j.inherits ?? ''), values, maxNozzle: n(j.birdy_max_nozzle), maxBed: n(j.birdy_max_bed), heatedBed: typeof j.birdy_heated_bed === 'boolean' ? j.birdy_heated_bed : undefined }
+  }
+
+  async deleteCustom(kind: PresetKind, name: string): Promise<PresetCatalog> {
+    await deleteImported(kind, name)
+    this.resolved.clear()
+    return this.getCatalog()
   }
 
   /** Runs the engine once with a deliberately unresolvable preset: it loads every bundle, logs each preset, and exits. */
@@ -267,9 +384,12 @@ export class SlicingEngine {
 
     const files: Record<PresetKind, string> = { machine: '', process: '', filament: '' }
     const chosen: Record<PresetKind, string> = { machine: s.machine, process: s.process, filament: s.filament }
+    const machineJson = await readImported('machine', s.machine)
+    // A printer without a heated bed never gets a bed temperature.
+    const overrides = machineJson?.birdy_heated_bed === false ? { ...s.overrides, bedTemp: 0 } : (s.overrides ?? {})
     for (const kind of KINDS) {
       const userJson = await readImported(kind, chosen[kind])
-      const preset = buildJobPreset(kind, { name: chosen[kind], userJson: userJson ?? undefined }, s.overrides ?? {}, ENGINE.presetVersion)
+      const preset = buildJobPreset(kind, { name: chosen[kind], userJson: userJson ?? undefined }, overrides, ENGINE.presetVersion)
       // The engine only resolves an inheriting preset when the file is one it loaded from its user folder.
       const file = join(data, 'user', 'default', kind, `Birdy job ${kind}.json`)
       await writeFile(file, JSON.stringify(preset, null, 2))
@@ -287,17 +407,22 @@ export class SlicingEngine {
     ]
     let output = ''
     let failure: string | null = null
-    try {
-      output = await run(exe, args, SLICE_TIMEOUT_MS, false, (c) => (this.running = c))
-    } catch (err) {
-      failure = (err as Error).message
-    } finally {
-      this.running = null
+    const logFile = join(dir, 'engine.log')
+    for (let attempt = 0; attempt < 2; attempt++) {
+      failure = null
+      try {
+        output = await run(exe, [...args, '--debug', '1', '--logfile', logFile], SLICE_TIMEOUT_MS, false, (c) => (this.running = c))
+      } catch (err) {
+        failure = (err as Error).message
+      } finally {
+        this.running = null
+      }
+      if (!failure || attempt > 0 || !(await fixLayerReset(files.machine, logFile))) break
     }
     try {
       const produced = await finishedGcode(outDir, failure)
       if (!produced) {
-        const msg = failure ?? output
+        const msg = `${failure ?? output}\n${await readFile(logFile, 'utf8').catch(() => '')}`.trim()
         return { ok: false, error: explainEngineError(msg), log: msg.slice(-4000) }
       }
       const finalName = `${stem}.gcode`
@@ -441,8 +566,34 @@ function run(exe: string, args: string[], timeoutMs: number, allowFail = false, 
   })
 }
 
+/**
+ * Some of the engine's own printer profiles use relative extrusion without resetting the extruder
+ * each layer, and the engine then refuses to slice ("Add G92 E0 to layer_gcode"). When the log says
+ * so, add that reset to the job's printer file and let the caller try once more.
+ */
+async function fixLayerReset(machineFile: string, logFile: string): Promise<boolean> {
+  const log = await readFile(logFile, 'utf8').catch(() => '')
+  if (!/G92 E0/.test(log)) return false
+  try {
+    const m = JSON.parse(await readFile(machineFile, 'utf8')) as Record<string, unknown>
+    const cur = typeof m.layer_change_gcode === 'string' ? m.layer_change_gcode : ''
+    if (/^\s*G92 E0\b/m.test(cur)) return false
+    m.layer_change_gcode = cur ? `G92 E0\n${cur}` : 'G92 E0'
+    await writeFile(machineFile, JSON.stringify(m, null, 2))
+    await rm(logFile, { force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
 function explainEngineError(out: string): string {
   if (/was stopped/.test(out)) return 'Slicing was cancelled.'
+  if (/not compatible with printer/i.test(out)) return 'The engine says this process or filament is not compatible with the printer. Pick one made for it.'
+  {
+    const v = /got error when validate: ([^\r\n]+)/.exec(out)
+    if (v) return `The engine refused these settings: ${v[1]}`
+  }
   if (/can not resolve preset|not found in the loaded bundle/i.test(out)) return 'The engine could not find one of the chosen presets. Pick them again or refresh the preset list.'
   if (/outside|out of (the )?(bed|plate)|exceeds/i.test(out)) return 'The model does not fit this printer’s build volume.'
   if (/empty layer|nothing to print|no object/i.test(out)) return 'The engine found nothing to print in this model.'
@@ -518,6 +669,21 @@ export async function writeImported(kind: PresetKind, json: Record<string, unkno
   await writeFile(importedFile(kind, name), JSON.stringify({ ...json, type: kind }, null, 2))
 }
 
+async function deleteImported(kind: PresetKind, name: string) {
+  const j = await readImported(kind, name)
+  if (j && (j.birdy_custom === true || j.birdy_builtin === true)) await rm(importedFile(kind, name), { force: true })
+}
+
+/** Writes the presets Birdy ships (Anycubic Mega X…) once; later edits by the user are kept. */
+let seeded = false
+async function seedBuiltIns() {
+  if (seeded) return
+  seeded = true
+  for (const { kind, json } of BUILTIN_PRESETS) {
+    if (!(await readImported(kind, String(json.name)))) await writeImported(kind, json)
+  }
+}
+
 async function listImported(): Promise<PresetRef[]> {
   const out: PresetRef[] = []
   for (const kind of KINDS) {
@@ -528,7 +694,17 @@ async function listImported(): Promise<PresetRef[]> {
       try {
         const j = JSON.parse(await readFile(join(dir, f), 'utf8')) as Record<string, unknown>
         if (typeof j.name === 'string')
-          out.push({ name: j.name, kind, vendor: String(j.birdy_vendor ?? 'Imported'), user: true, base: typeof j.inherits === 'string' ? j.inherits : undefined })
+          out.push({
+            name: j.name,
+            kind,
+            vendor: String(j.birdy_vendor ?? 'Imported'),
+            user: true,
+            base: typeof j.inherits === 'string' ? j.inherits : undefined,
+            ...(j.birdy_custom === true || j.birdy_builtin === true ? { custom: true } : {}),
+            ...(typeof j.birdy_max_nozzle === 'number' ? { maxNozzle: j.birdy_max_nozzle } : {}),
+            ...(typeof j.birdy_max_bed === 'number' ? { maxBed: j.birdy_max_bed } : {}),
+            ...(typeof j.birdy_heated_bed === 'boolean' ? { heatedBed: j.birdy_heated_bed } : {}),
+          })
       } catch {
         /* skip unreadable files */
       }

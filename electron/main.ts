@@ -17,7 +17,7 @@ import { assertTrusted, isId, isRect, isShortString, setTrustedUi } from './secu
 import { SlicingEngine } from './slicing/engine'
 import { importCandidates, importSettings } from './slicing/import'
 import { listPrinters, removePrinter, savePrinter, sendToPrinter, testPrinter, printerStatus, printerSnapshot, sendResinToPrinter } from './printers'
-import type { ImportSource, PrinterInput, SendRequest, SerialPortChoice, SliceRequest } from '../src/types/slicing'
+import type { CustomPresetInput, ImportSource, PresetKind, PrinterInput, ResolveRequest, SendRequest, SerialPortChoice, SliceRequest } from '../src/types/slicing'
 
 app.setName('Birdy')
 // Shared and service workers take their user agent from here, not from the session. Left alone they
@@ -276,6 +276,25 @@ function registerIpc(exportsDir: string) {
   handle('engine:read-gcode', async (jobId) => eng().readGcode(String(jobId)))
   handle('engine:save-gcode', async (jobId) => (win ? eng().saveGcode(win, String(jobId)) : { ok: false }))
   handle('engine:import-candidates', async () => importCandidates())
+  const presetKind = (k: unknown): PresetKind => {
+    if (k === 'machine' || k === 'process' || k === 'filament') return k
+    throw new Error('Unknown preset kind.')
+  }
+  const presetName = (n: unknown) => {
+    if (typeof n !== 'string' || !n || n.length > 300) throw new Error('Unknown preset.')
+    return n
+  }
+  handle('engine:resolve', async (req) => {
+    const r = (req ?? {}) as ResolveRequest
+    return eng().resolve({ machine: presetName(r.machine), process: typeof r.process === 'string' ? r.process : undefined, filament: typeof r.filament === 'string' ? r.filament : undefined })
+  })
+  handle('engine:machine-bed', async (name) => eng().machineBed(presetName(name)))
+  handle('engine:save-custom', async (items) => {
+    if (!Array.isArray(items) || items.length > 10) throw new Error('Nothing to save.')
+    return eng().saveCustom(items as CustomPresetInput[])
+  })
+  handle('engine:read-custom', async (kind, name) => eng().readCustom(presetKind(kind), presetName(name)))
+  handle('engine:delete-custom', async (kind, name) => eng().deleteCustom(presetKind(kind), presetName(name)))
   handle('engine:import', async (source) => {
     if (!['orca', 'bambu', 'prusa', 'cura'].includes(String(source))) throw new Error('Unknown slicer.')
     return importSettings(source as ImportSource, await eng().getCatalog())

@@ -19,6 +19,7 @@ import { printCost } from '../../app/costs.svelte'
 import { recordPrint } from '../history/history.svelte'
 import { activeModel, exportActive, getViewer, onModelChange, setBed, ws } from '../workspace/store.svelte'
 import { startUsbPrint } from './usb.svelte'
+import { resin } from './resin.svelte'
 
 const SETTINGS_KEY = 'birdy.slice'
 
@@ -60,6 +61,8 @@ export const sl = $state({
   sending: false,
   sendResult: null as SendResult | null,
   managePrinters: false,
+  /** The custom printer editor: open for a new printer, or for editing one by name. */
+  editor: null as null | { edit: string | null },
   /** Set while the system is waiting for the user to pick a USB serial port. */
   portChoices: null as SerialPortChoice[] | null,
   preview: {
@@ -138,6 +141,7 @@ export async function loadCatalog(refresh = false) {
   try {
     sl.catalog = await window.api.engine.catalog(refresh)
     ensureValidSelection()
+    void followBed()
   } catch (err) {
     sl.catalogError = cleanError(err)
   } finally {
@@ -159,14 +163,16 @@ function ensureValidSelection() {
     return
   }
   const fitting = (list: PresetRef[]) => list.filter((p) => fitsMachine(p, m))
-  const procs = fitting(c.processes)
+  // Presets made for exactly this printer (a custom printer's own, or the ones Birdy ships) come first.
+  const mine = (p: PresetRef) => p.user === true && p.name.endsWith(`@${m.name}`)
+  const procs = fitting(c.processes).sort((a, b) => Number(mine(b)) - Number(mine(a)))
   if (!c.processes.some((p) => p.name === sl.settings.process)) {
-    sl.settings.process = (procs.find((p) => /0\.20mm Standard/.test(p.name)) ?? procs[0] ?? c.processes[0])?.name ?? ''
+    sl.settings.process = (procs.find((p) => mine(p) && /0\.20mm/.test(p.name)) ?? procs.find(mine) ?? procs.find((p) => /0\.20mm Standard/.test(p.name)) ?? procs[0] ?? c.processes[0])?.name ?? ''
   }
   const fils = fitting(c.filaments)
   if (!c.filaments.some((f) => f.name === sl.settings.filament)) {
     // Prefer the printer maker's own PLA for this printer, then generic PLA.
-    const own = fils.find((f) => f.vendor === m.vendor && /\bPLA\b/.test(f.name) && f.name.includes('@'))
+    const own = fils.find((f) => mine(f) && /\bPLA\b/.test(f.name)) ?? fils.find((f) => f.vendor === m.vendor && /\bPLA\b/.test(f.name) && f.name.includes('@'))
     const generic = fils.find((f) => f.name === 'Generic PLA @System')
     sl.settings.filament = (own ?? generic ?? fils.find((f) => /PLA/.test(f.name)) ?? fils[0] ?? c.filaments[0])?.name ?? ''
   }
@@ -179,13 +185,47 @@ export function chooseMachine(name: string) {
   const m = machineRef()
   if (m && sl.catalog) {
     // Switching printers: move to that printer's matching process and filament.
+    // A printer with its own presets ("… @<printer>") always starts on them.
+    const hasOwn = (list: PresetRef[]) => list.some((p) => p.user && p.name.endsWith(`@${m.name}`))
+    const ownFor = (name: string) => name.endsWith(`@${m.name}`)
     const proc = sl.catalog.processes.find((p) => p.name === sl.settings.process)
-    if (!proc || (before && !fitsMachine(proc, m))) sl.settings.process = ''
+    if (!proc || (before && !fitsMachine(proc, m)) || (hasOwn(sl.catalog.processes) && !ownFor(proc.name))) sl.settings.process = ''
     const fil = sl.catalog.filaments.find((f) => f.name === sl.settings.filament)
-    if (!fil || !fitsMachine(fil, m)) sl.settings.filament = ''
+    if (!fil || !fitsMachine(fil, m) || (hasOwn(sl.catalog.filaments) && !ownFor(fil.name))) sl.settings.filament = ''
   }
   ensureValidSelection()
   persist()
+  void followBed()
+}
+
+let bedFor = ''
+/** Sizes the plate in the 3D view to the chosen printer's build volume. */
+export async function followBed(force = false) {
+  const name = sl.settings.machine
+  if (!name || resin.mode === 'resin' || (bedFor === name && !force)) return
+  bedFor = name
+  try {
+    const b = await window.api.engine.machineBed(name)
+    if (b && sl.settings.machine === name && (resin.mode as string) !== 'resin') setBed(b.x, b.y, b.z)
+  } catch (err) {
+    console.warn(`bed size for ${name}: ${cleanError(err)}`)
+    bedFor = ''
+  }
+}
+
+export function openPrinterEditor(edit: string | null = null) {
+  sl.editor = { edit }
+}
+
+/** After the editor saves: show the new list and pick what was saved. */
+export function useSaved(catalog: PresetCatalog, machine: string, process?: string, filament?: string) {
+  sl.catalog = catalog
+  sl.settings.machine = machine
+  if (process) sl.settings.process = process
+  if (filament) sl.settings.filament = filament
+  ensureValidSelection()
+  persist()
+  void followBed(true)
 }
 
 export function setPreset(kind: 'process' | 'filament', name: string) {

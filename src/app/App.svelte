@@ -15,6 +15,8 @@
   import Icon from '../components/Icon.svelte'
   import { maybeStartTour, ui } from './commands.svelte'
   import Tour from './Tour.svelte'
+  import PrinterEditor from '../features/slicing/PrinterEditor.svelte'
+  import { sl } from '../features/slicing/store.svelte'
   import { installDemo } from './demo.svelte'
   import { applyAccent, theme } from './theme.svelte'
   import ThemePanel from './ThemePanel.svelte'
@@ -130,7 +132,7 @@
 
   // The website is a native view; hide it while resizing so the divider keeps the pointer.
   $effect(() => {
-    window.api.layout.setWebVisible((ws.layout === 'browse' || ws.layout === 'split') && !dragging && !fileDrag && !ui.palette && !ui.shortcuts && !ui.tour)
+    window.api.layout.setWebVisible((ws.layout === 'browse' || ws.layout === 'split') && !dragging && !fileDrag && !ui.palette && !ui.shortcuts && !ui.tour && !sl.editor)
   })
 
   function startDrag(e: PointerEvent) {
@@ -219,6 +221,9 @@
 {/if}
 {#if ui.shortcuts}
   <ShortcutsOverlay />
+{/if}
+{#if sl.editor}
+  <PrinterEditor />
 {/if}
 
 <style>

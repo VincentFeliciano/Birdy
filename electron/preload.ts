@@ -114,6 +114,11 @@ const api: Api = {
     saveGcode: (jobId) => ipcRenderer.invoke('engine:save-gcode', jobId),
     importCandidates: () => ipcRenderer.invoke('engine:import-candidates'),
     importSettings: (source) => ipcRenderer.invoke('engine:import', source),
+    resolve: (req) => ipcRenderer.invoke('engine:resolve', req),
+    machineBed: (name) => ipcRenderer.invoke('engine:machine-bed', name),
+    saveCustom: (items) => ipcRenderer.invoke('engine:save-custom', items),
+    readCustom: (kind, name) => ipcRenderer.invoke('engine:read-custom', kind, name),
+    deleteCustom: (kind, name) => ipcRenderer.invoke('engine:delete-custom', kind, name),
   },
   printers: {
     list: () => ipcRenderer.invoke('printers:list'),

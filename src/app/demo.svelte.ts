@@ -10,7 +10,8 @@ import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
 import { addShape, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
-import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
+import { chooseMachine, importFrom, installEngine, loadCatalog, openPrinterEditor, setPreset, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
+import { BED } from '../features/workspace/store.svelte'
 
 /** Builds a small printable sample (a torus knot, ~70 mm) as a real binary STL and opens it. */
 export async function openSample() {
@@ -557,6 +558,88 @@ Shape {
     if (sliceDemo.startsWith('import:')) {
       await importFrom(sliceDemo.slice(7) as 'orca' | 'bambu' | 'prusa' | 'cura')
       console.log(`import: ${JSON.stringify($state.snapshot(sl.settings))} notes=${sl.importNotes.join(' | ')} error=${sl.error}`)
+    } else if (sliceDemo.startsWith('bed:')) {
+      // The plate follows the printer: switch through a few and read the build volume each time.
+      for (const name of sliceDemo.slice(4).split('|')) {
+        const before = `${BED.x}x${BED.y}x${BED.z}`
+        chooseMachine(name)
+        await until(() => `${BED.x}x${BED.y}x${BED.z}` !== before, 60_000)
+        console.log(`bed ${name}: ${BED.x} x ${BED.y} x ${BED.z} (process ${sl.settings.process}, filament ${sl.settings.filament})`)
+        await new Promise((r) => setTimeout(r, 300))
+      }
+    } else if (sliceDemo === 'custom' || sliceDemo === 'custom-edit') {
+      // Add a printer through the editor, the way a person would.
+      const setIn = (el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null | undefined, v: string) => {
+        if (!el) throw new Error('field missing')
+        el.value = v
+        el.dispatchEvent(new Event(el instanceof HTMLInputElement && el.type === 'text' ? 'input' : 'change', { bubbles: true }))
+        el.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+      const fieldByLabel = (label: string) =>
+        [...document.querySelectorAll<HTMLLabelElement>('.dlg label')].find((l) => l.querySelector('span')?.textContent?.trim().startsWith(label))?.querySelector<HTMLInputElement | HTMLSelectElement>('input, select')
+      const tab = async (t: string) => {
+        ;[...document.querySelectorAll<HTMLButtonElement>('.dlg .tabs button')].find((b) => b.textContent?.startsWith(t))?.click()
+        await new Promise((r) => setTimeout(r, 150))
+      }
+      const ready = () => !!document.querySelector<HTMLButtonElement>('.dlg footer .primary') && !document.querySelector<HTMLButtonElement>('.dlg footer .primary')!.disabled
+      if (sliceDemo === 'custom-edit') {
+        chooseMachine('Birdy Test Printer')
+        openPrinterEditor('Birdy Test Printer')
+      } else {
+        if (sl.catalog?.machines.some((x) => x.name === 'Birdy Test Printer')) {
+          for (const k of ['process', 'filament'] as const) for (const p of sl.catalog![k === 'process' ? 'processes' : 'filaments'].filter((x) => x.name.endsWith('@Birdy Test Printer'))) await window.api.engine.deleteCustom(k, p.name)
+          sl.catalog = await window.api.engine.deleteCustom('machine', 'Birdy Test Printer')
+        }
+        openPrinterEditor()
+      }
+      const t0 = performance.now()
+      if (!(await until(ready, 90_000))) throw new Error('editor never loaded its defaults')
+      if (sliceDemo === 'custom') {
+        setIn(document.querySelector<HTMLInputElement>('.dlg .top input'), 'Birdy Test Printer')
+        setIn(fieldByLabel('Bed width X'), '220')
+        setIn(fieldByLabel('Bed depth Y'), '180')
+        setIn(fieldByLabel('Max height'), '150')
+        setIn(fieldByLabel('Retraction'), '5.2')
+        setIn(fieldByLabel('Heated bed'), 'no')
+        await tab('Heating')
+        setIn(fieldByLabel('Nozzle'), '213')
+        setIn(fieldByLabel('Fan max'), '77')
+        await tab('Print settings')
+        setIn(fieldByLabel('Walls'), '4')
+        await tab('All settings')
+        setIn(document.querySelector<HTMLInputElement>('.dlg .search'), 'skirt_distance')
+        document.querySelector<HTMLInputElement>('.dlg .search')!.dispatchEvent(new Event('input', { bubbles: true }))
+        await new Promise((r) => setTimeout(r, 150))
+        setIn(document.querySelector<HTMLInputElement>('.dlg .all .row input'), '7')
+      } else {
+        await tab('Heating')
+        console.log(`custom-edit loaded: nozzle=${(fieldByLabel('Nozzle') as HTMLInputElement).value} changed=${document.querySelectorAll('.dlg .field.chg').length}`)
+        setIn(fieldByLabel('Nozzle'), '208')
+      }
+      const shot = document.querySelector('.dlg .tabs')?.textContent
+      console.log(`custom editor tabs: ${shot}`)
+      document.querySelector<HTMLButtonElement>('.dlg footer .primary')!.click()
+      if (!(await until(() => !sl.editor, 30_000))) throw new Error(document.querySelector('.dlg .err')?.textContent ?? 'save failed')
+      const m = sl.catalog?.machines.find((x) => x.name === sl.settings.machine)
+      console.log(`custom saved: machine=${sl.settings.machine} vendor=${m?.vendor} custom=${m?.custom} heatedBed=${m?.heatedBed} process=${sl.settings.process} filament=${sl.settings.filament}`)
+      await until(() => BED.x === 220 && BED.y === 180, 90_000)
+      console.log(`custom bed: ${BED.x} x ${BED.y} x ${BED.z} after ${Math.round(performance.now() - t0)} ms`)
+    } else if (sliceDemo.startsWith('editor:')) {
+      // Leave the printer editor open on a tab, for a screenshot.
+      chooseMachine('Anycubic Mega X 0.4 nozzle')
+      openPrinterEditor('Anycubic Mega X 0.4 nozzle')
+      await until(() => !!document.querySelector<HTMLButtonElement>('.dlg footer .primary:not([disabled])'), 90_000)
+      ;[...document.querySelectorAll<HTMLButtonElement>('.dlg .tabs button')].find((b) => b.textContent?.startsWith(sliceDemo.slice(7)))?.click()
+      await new Promise((r) => setTimeout(r, 500))
+      console.log(`editor open: ${document.querySelectorAll('.dlg .field').length} fields, ${document.querySelectorAll('.dlg .field.chg').length} changed`)
+      return
+    } else if (sliceDemo.startsWith('fil:')) {
+      // "fil:<printer>|<filament>": slice with a given filament on a given printer.
+      const [mach, fil] = sliceDemo.slice(4).split('|')
+      chooseMachine(mach!)
+      if (fil) setPreset('filament', fil)
+      await until(() => BED.x !== 0, 60_000)
+      console.log(`fil: ${sl.settings.machine} / ${sl.settings.process} / ${sl.settings.filament} bed=${BED.x}x${BED.y}x${BED.z}`)
     } else chooseMachine(sliceDemo)
     await slice()
     if (sl.error) throw new Error(sl.error)
@@ -588,6 +671,12 @@ Shape {
       sl.printers = await api.list()
     }
     console.log(`slice: ${sl.result?.summary?.printTime} ${sl.result?.summary?.filamentG}g layers=${sl.preview.layers} features=${sl.preview.features.map((f) => f.name).join('/')}`)
+    if (sl.result?.jobId) {
+      // What the engine actually used, from the G-code's settings block.
+      const text = new TextDecoder().decode(await window.api.engine.readGcode(sl.result.jobId))
+      const pick = (k: string) => new RegExp(`^; ${k} = (.*)$`, 'm').exec(text)?.[1]
+      console.log(`gcode: ${['printable_area', 'printable_height', 'retraction_length', 'nozzle_temperature', 'hot_plate_temp', 'fan_max_speed', 'wall_loops', 'skirt_distance', 'filament_type', 'gcode_flavor', 'outer_wall_speed', 'layer_height'].map((k) => `${k}=${pick(k)}`).join(' ')}`)
+    }
   }
   ;(window as unknown as { __setTheme: (id: string, open: boolean) => void }).__setTheme = (id, open) => {
     const a = ACCENTS.find((x) => x.id === id)

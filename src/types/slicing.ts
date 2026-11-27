@@ -11,6 +11,46 @@ export interface PresetRef {
   user?: boolean
   /** For an imported preset: the built-in preset it is based on. */
   base?: string
+  /** Made in Birdy (a custom printer or one Birdy ships), so it can be edited. */
+  custom?: boolean
+  /** A printer's safe maximum temperatures (°C), when known. */
+  maxNozzle?: number
+  maxBed?: number
+  /** False for a printer without a heated bed. */
+  heatedBed?: boolean
+}
+
+/** One preset to save from the printer editor. */
+export interface CustomPresetInput {
+  kind: PresetKind
+  name: string
+  /** The engine preset it starts from. */
+  inherits: string
+  /** Changed settings, engine keys to string values. */
+  values: Record<string, string>
+  maxNozzle?: number
+  maxBed?: number
+  heatedBed?: boolean
+  /** Saving under a new name: the old one to remove. */
+  replaces?: string
+}
+
+/** A saved custom preset, for editing. */
+export interface CustomPresetData {
+  kind: PresetKind
+  name: string
+  inherits: string
+  values: Record<string, string>
+  maxNozzle?: number
+  maxBed?: number
+  heatedBed?: boolean
+}
+
+/** Which presets to resolve; process and filament default to ones that fit the printer. */
+export interface ResolveRequest {
+  machine: string
+  process?: string
+  filament?: string
 }
 
 export interface PresetCatalog {

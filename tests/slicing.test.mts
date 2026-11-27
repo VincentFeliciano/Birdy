@@ -2,8 +2,11 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import {
+  bedFromSettings,
   buildJobPreset,
+  customPreset,
   fitsMachine,
+  parseConfigBlock,
   matchMachine,
   overrideKeys,
   parseCatalogLog,
@@ -300,5 +303,38 @@ for (const f of real) {
     assert.ok(Math.abs(p.max[2] - 20) < 0.01, `top at ${p.max[2]}`)
   })
 }
+
+test('settings come back from the G-code config block, with real newlines', () => {
+  const g = 'G1 X1\n; CONFIG_BLOCK_START\n; printable_area = 0x0,300x0,300x300,0x300\n; printable_height = 305\n; machine_start_gcode = G28\\nG1 Z5\n; layer_height = 0.2\n; CONFIG_BLOCK_END\n'
+  const s = parseConfigBlock(g)
+  assert.equal(s.printable_height, '305')
+  assert.equal(s.machine_start_gcode, 'G28\nG1 Z5')
+  assert.deepEqual(bedFromSettings(s), { x: 300, y: 300, z: 305 })
+  assert.equal(bedFromSettings({ printable_area: 'nonsense' }), null)
+})
+
+test('custom presets keep plain settings and Birdy notes, never identity keys', () => {
+  const p = customPreset('machine', 'Mine', 'MyMarlin 0.4 nozzle', { retraction_length: '4.5', name: 'evil', 'bad key': '1', inherits: 'x' }, { birdy_max_bed: 90, other: 1 })
+  assert.equal(p.name, 'Mine')
+  assert.equal(p.inherits, 'MyMarlin 0.4 nozzle')
+  assert.equal(p.retraction_length, '4.5')
+  assert.equal(p.birdy_max_bed, 90)
+  assert.ok(!('bad key' in p) && !('other' in p))
+})
+
+test('a preset made for a custom printer fits it, whatever it inherits', () => {
+  const machine = { name: 'Anycubic Mega X 0.4 nozzle', vendor: 'Anycubic', kind: 'machine' as const, user: true, base: 'Anycubic i3 Mega S 0.4 nozzle' }
+  assert.ok(fitsMachine({ name: 'PLA @Anycubic Mega X 0.4 nozzle', vendor: 'Anycubic', kind: 'filament', user: true }, machine))
+  assert.ok(fitsMachine({ name: '0.20mm Standard @Anycubic i3MegaS', vendor: 'Anycubic', kind: 'process' }, machine))
+  assert.ok(!fitsMachine({ name: 'PLA @Someone Else', vendor: 'My printers', kind: 'filament', user: true }, machine))
+})
+
+test('job process and filament files are usable with any printer', () => {
+  const p = buildJobPreset('process', { name: '0.20mm Standard @Anycubic Kobra' }, {}, '2.5.0.0')
+  assert.deepEqual(p.compatible_printers, [])
+  assert.equal(p.compatible_printers_condition, '')
+  const m = buildJobPreset('machine', { name: 'Anycubic Kobra Max 0.4 nozzle' }, {}, '2.5.0.0')
+  assert.ok(!('compatible_printers' in m))
+})
 
 console.log(`\n${passed} slicing tests passed`)

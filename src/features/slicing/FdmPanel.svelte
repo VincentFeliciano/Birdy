@@ -18,6 +18,7 @@
     installEngine,
     loadCatalog,
     machineRef,
+    openPrinterEditor,
     saveGcode,
     sendToPrinter,
     answerPort,
@@ -44,15 +45,18 @@
   const result = $derived(sl.result?.ok ? sl.result : null)
   const summary = $derived(result?.summary)
 
-  // Imported printers are listed under their own heading, then every vendor.
+  // Your own printers ("My printers", "Imported") first, then every brand. Printers Birdy adds to a
+  // brand (Anycubic Mega X) are listed under that brand.
   const vendors = $derived.by(() => {
     if (!catalog) return [] as string[]
-    const imported = catalog.machines.some((m) => m.user) ? ['Imported'] : []
-    return [...imported, ...catalog.vendors]
+    const own = [...new Set(catalog.machines.filter((m) => m.user && !catalog.vendors.includes(m.vendor)).map((m) => m.vendor))].sort()
+    return [...own, ...catalog.vendors]
   })
   let vendorPick = $state('')
-  const vendor = $derived(vendorPick || (machine ? (machine.user ? 'Imported' : machine.vendor) : ''))
-  const machines = $derived(catalog ? catalog.machines.filter((m) => (vendor === 'Imported' ? m.user : !m.user && m.vendor === vendor)) : [])
+  const vendor = $derived(vendorPick || (machine ? machine.vendor : ''))
+  const machines = $derived(catalog ? catalog.machines.filter((m) => m.vendor === vendor).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) : [])
+  const maxNozzle = $derived(machine?.maxNozzle ?? 350)
+  const maxBed = $derived(machine?.maxBed ?? 130)
 
   function options(list: PresetRef[] | undefined, selected: string) {
     if (!list) return { fit: [] as PresetRef[], other: [] as PresetRef[] }
@@ -203,6 +207,12 @@
             <input type="checkbox" checked={sl.showAll} onchange={(e) => (sl.showAll = e.currentTarget.checked)} />
             Show presets made for other printers
           </label>
+          <div class="own">
+            <button class="ghost sm" title="Set up a printer that isn't in the list, with full control of its settings" onclick={() => openPrinterEditor()}><Icon name="plus" size={12} />Add a printer</button>
+            {#if machine?.custom}
+              <button class="ghost sm" title="Change this printer's settings" onclick={() => openPrinterEditor(machine.name)}><Icon name="pencil" size={12} />Edit {machine.name}</button>
+            {/if}
+          </div>
         {/if}
       </section>
 
@@ -237,11 +247,13 @@
             </label>
             <label class="field">
               <span>Nozzle <i>°C</i></span>
-              <input type="number" min="150" max="350" step="5" placeholder="preset" value={o.nozzleTemp ?? ''} onchange={(e) => setOverride('nozzleTemp', num(e))} />
+              <input type="number" min="150" max={maxNozzle} step="5" placeholder="preset" value={o.nozzleTemp ?? ''} onchange={(e) => setOverride('nozzleTemp', num(e))} />
+              {#if (o.nozzleTemp ?? 0) > maxNozzle}<em class="warn">Over this printer's {maxNozzle} °C</em>{/if}
             </label>
             <label class="field">
               <span>Bed <i>°C</i></span>
-              <input type="number" min="0" max="130" step="5" placeholder="preset" value={o.bedTemp ?? ''} onchange={(e) => setOverride('bedTemp', num(e))} />
+              <input type="number" min="0" max={maxBed} step="5" placeholder={machine.heatedBed === false ? 'no heated bed' : 'preset'} disabled={machine.heatedBed === false} value={o.bedTemp ?? ''} onchange={(e) => setOverride('bedTemp', num(e))} />
+              {#if (o.bedTemp ?? 0) > maxBed}<em class="warn">Over this bed's {maxBed} °C</em>{/if}
             </label>
             <label class="field">
               <span>Brim</span>
@@ -365,6 +377,28 @@
 {/if}
 
 <style>
+  .own {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .own .sm {
+    height: 26px;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .warn {
+    font-style: normal;
+    font-size: 10px;
+    color: #ff7a59;
+  }
   .scroll {
     flex: 1;
     min-height: 0;

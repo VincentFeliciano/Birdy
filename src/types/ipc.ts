@@ -192,6 +192,10 @@ export interface SlicerHandoffResult {
 }
 
 import type {
+  CustomPresetData,
+  CustomPresetInput,
+  PresetKind,
+  ResolveRequest,
   EngineState,
   ImportCandidate,
   ImportResult,
@@ -378,6 +382,13 @@ export interface Api {
     saveGcode(jobId: string): Promise<SliceSaveResult>
     importCandidates(): Promise<ImportCandidate[]>
     importSettings(source: ImportSource): Promise<ImportResult>
+    /** Every engine setting for these presets (a quick test slice). */
+    resolve(req: ResolveRequest): Promise<Record<string, string>>
+    /** A printer's build volume in mm. */
+    machineBed(name: string): Promise<{ x: number; y: number; z: number } | null>
+    saveCustom(items: CustomPresetInput[]): Promise<PresetCatalog>
+    readCustom(kind: PresetKind, name: string): Promise<CustomPresetData | null>
+    deleteCustom(kind: PresetKind, name: string): Promise<PresetCatalog>
   }
   printers: {
     list(): Promise<PrinterInfo[]>
