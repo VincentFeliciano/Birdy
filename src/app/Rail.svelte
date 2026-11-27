@@ -2,7 +2,7 @@
   import Icon, { type IconName } from '../components/Icon.svelte'
   import { downloads } from '../stores/browser.svelte'
   import { openFromDialog, ws, type Layout } from '../features/workspace/store.svelte'
-  import { cycleAccent, theme } from './theme.svelte'
+  import { theme } from './theme.svelte'
 
   const modes: { id: Layout; icon: IconName; label: string }[] = [
     { id: 'browse', icon: 'globe', label: 'Browse' },
@@ -36,10 +36,13 @@
   </button>
   <div class="spacer"></div>
   <button
-    class="icon-btn"
-    title="Neon colour: {theme.accent.name} (click to change)"
-    aria-label="Change neon colour"
-    onclick={cycleAccent}>
+    class="icon-btn theme-btn"
+    class:on={theme.panelOpen}
+    title="Theme: neon colour ({theme.accent.name})"
+    aria-label="Theme: change neon colour"
+    aria-expanded={theme.panelOpen}
+    onclick={() => (theme.panelOpen = !theme.panelOpen)}>
+    <Icon name="palette" size={18} />
     <span class="swatch" style="--c: {theme.accent.hex}"></span>
   </button>
   <button class="icon-btn" title="Open the Birdy downloads folder" aria-label="Open downloads folder" onclick={() => window.api.downloads.openFolder()}>
@@ -71,9 +74,17 @@
     border: 1px solid var(--neon-soft);
     box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.08);
   }
+  .theme-btn {
+    position: relative;
+  }
+  .theme-btn .swatch {
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+  }
   .swatch {
-    width: 14px;
-    height: 14px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--c);
     box-shadow: 0 0 6px var(--c), 0 0 14px var(--c);

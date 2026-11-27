@@ -56,6 +56,9 @@ const api: Api = {
     renameGroup: (from, to) => ipcRenderer.send('library:rename-group', from, to),
     deleteGroup: (name) => ipcRenderer.send('library:delete-group', name),
   },
+  theme: {
+    setAccent: (hex) => ipcRenderer.send('theme:accent', hex),
+  },
   slicer: {
     list: () => ipcRenderer.invoke('slicer:list'),
     choose: () => ipcRenderer.invoke('slicer:choose'),

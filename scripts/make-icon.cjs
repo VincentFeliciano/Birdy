@@ -1,28 +1,31 @@
-// Renders the Birdy neon logo to build/icon.png (512x512) for the Windows installer.
+// Renders the Birdy neon logo (src/assets/birdy-logo.png) to build/icon.png (512x512) for the
+// Windows installer and app icon: the bird glowing mustard yellow on a dark rounded tile.
 // Run with: npm run icon
 const { app, BrowserWindow } = require('electron')
 const fs = require('fs')
 const path = require('path')
 
 const SIZE = 512
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}" viewBox="0 0 24 24">
-  <defs>
-    <filter id="g" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="0.45" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-  </defs>
-  <rect x="1" y="1" width="22" height="22" rx="6" fill="#0B0C0F"/>
-  <g fill="none" stroke="#F5C400" stroke-linecap="round" stroke-linejoin="round" filter="url(#g)">
-    <rect x="1.8" y="1.8" width="20.4" height="20.4" rx="5.2" stroke-width="0.6"/>
-    <circle cx="11.2" cy="12.6" r="5.6" stroke-width="1.3"/>
-    <path d="M16.7 11.3l2.9 1.3-2.9 1.3" stroke-width="1.3"/>
-    <path d="M8.2 13.4c1 1.8 2.9 2.4 4.8 1.5" stroke-width="1.2"/>
-    <path d="M10.6 7.1c.2-1.2 1-2 2.1-2.2" stroke-width="1.2"/>
-    <path d="M7.5 19.6h8" stroke-width="1.2"/>
-  </g>
-  <circle cx="13.4" cy="11" r="0.95" fill="#F5C400" filter="url(#g)"/>
-</svg>`
+const ACCENT = '245, 196, 0' // mustard yellow, the default neon colour
+const logo = fs.readFileSync(path.join(__dirname, '..', 'src', 'assets', 'birdy-logo.png')).toString('base64')
+
+const html = `<!doctype html><html><head><style>
+  html, body { margin: 0; width: ${SIZE}px; height: ${SIZE}px; background: transparent; overflow: hidden; }
+  .tile {
+    position: absolute; inset: 14px; border-radius: 112px;
+    background: radial-gradient(circle at 50% 40%, #17181d, #0b0c0f 70%);
+    box-shadow: inset 0 0 0 5px rgba(${ACCENT}, .85), inset 0 0 26px rgba(${ACCENT}, .35);
+  }
+  .glow {
+    position: absolute; left: 50%; top: 52%; height: 300px; aspect-ratio: 512 / 453; transform: translate(-50%, -50%);
+    filter: drop-shadow(0 0 4px rgba(${ACCENT}, 1)) drop-shadow(0 0 16px rgba(${ACCENT}, .6)) drop-shadow(0 0 38px rgba(${ACCENT}, .3));
+  }
+  .bird {
+    width: 100%; height: 100%;
+    background: radial-gradient(circle at 60% 40%, rgb(255, 226, 110), rgb(${ACCENT}) 70%);
+    -webkit-mask: url(data:image/png;base64,${logo}) center / contain no-repeat;
+  }
+</style></head><body><div class="tile"></div><div class="glow"><div class="bird"></div></div></body></html>`
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
@@ -34,9 +37,8 @@ app.whenReady().then(async () => {
     useContentSize: true,
     webPreferences: { offscreen: true },
   })
-  const html = `<html><body style="margin:0;background:transparent">${svg}</body></html>`
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
-  await new Promise((r) => setTimeout(r, 400))
+  await new Promise((r) => setTimeout(r, 600))
   const img = await win.webContents.capturePage({ x: 0, y: 0, width: SIZE, height: SIZE })
   const out = path.join(__dirname, '..', 'build', 'icon.png')
   fs.mkdirSync(path.dirname(out), { recursive: true })

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte'
+  import Logo from '../../components/Logo.svelte'
   import { library } from '../../stores/library.svelte'
   import { openFromLibrary, ws } from '../workspace/store.svelte'
   import { fmtBytes } from '../../app/format'
@@ -201,6 +202,7 @@
         {/if}
       {:else}
         <div class="about">
+          <div class="about-logo"><Logo size={72} glow={2} /></div>
           <h3>Birdy</h3>
           <p>A browser that turns into a 3D-printing workspace. Find a model, check it, fix it, slice it, and send it to your printer without switching apps.</p>
           <p class="dim">
@@ -545,10 +547,14 @@
     max-width: 640px;
     padding: 8px 4px;
   }
+  .about-logo {
+    padding: 8px 0 4px 6px;
+  }
   .about h3 {
     margin: 18px 0 6px;
   }
-  .about h3:first-child {
+  .about h3:first-child,
+  .about-logo + h3 {
     margin-top: 4px;
     font-size: 18px;
     color: var(--accent);

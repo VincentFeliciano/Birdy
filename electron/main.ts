@@ -195,6 +195,7 @@ function registerIpc(exportsDir: string) {
 
   handle('slicer:list', async () => listSlicers())
   handle('slicer:choose', async () => (win ? chooseSlicer(win) : listSlicers()))
+  on('theme:accent', (hex) => typeof hex === 'string' && /^#[0-9a-f]{6}$/i.test(hex) && browser?.setStartPageAccent(hex))
   on('slicer:set-default', (id) => isShortString(id, 100) && setDefaultSlicer(id))
   handle('slicer:open', async (req) => openInSlicer(req as SlicerHandoff, exportsDir))
 
@@ -282,6 +283,11 @@ function maybeScreenshot() {
     setTimeout(async () => {
       if (!win) return
       const view = process.argv.find((a) => a.startsWith('--view='))?.slice(7)
+      const accent = process.argv.find((a) => a.startsWith('--theme='))?.slice('--theme='.length)
+      if (accent) {
+        await win.webContents.executeJavaScript(`window.__setTheme?.(${JSON.stringify(accent)}, true)`)
+        await new Promise((r) => setTimeout(r, 600))
+      }
       if (view) {
         await win.webContents.executeJavaScript(`window.__setLayout?.(${JSON.stringify(view)})`)
         await new Promise((r) => setTimeout(r, 800))

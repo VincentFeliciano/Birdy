@@ -1,4 +1,4 @@
-import { app, WebContentsView, type BrowserWindow, type Input, type Session } from 'electron'
+import { app, WebContentsView, type BrowserWindow, type Input, type Session, type WebContents } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { buildSearchUrl, isSearchType, type Rect, type SearchType, type TabInfo, type TabsState } from '../src/types/ipc'
@@ -113,6 +113,10 @@ export class BrowserManager {
       if (details.isMainFrame && !details.isSameDocument) tab.favicon = null
     })
     followSignInUserAgent(wc, this.opts.session.getUserAgent())
+    wc.on('dom-ready', () => {
+      this.accentCss.delete(id)
+      void this.styleStartPage(id, wc)
+    })
     for (const ev of ['page-title-updated', 'did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page'] as const) {
       wc.on(ev as 'did-stop-loading', () => this.emit())
     }
@@ -128,12 +132,32 @@ export class BrowserManager {
     return id
   }
 
+  /** Neon colour for the new-tab page, which is a separate document from the app UI. */
+  private accent: string | null = null
+  private accentCss = new Map<number, string>()
+
+  setStartPageAccent(hex: string) {
+    this.accent = hex
+    for (const tab of this.tabs.values()) void this.styleStartPage(tab.id, tab.view.webContents)
+  }
+
+  private async styleStartPage(id: number, wc: WebContents) {
+    if (!this.accent || wc.isDestroyed() || wc.getURL() !== this.opts.startPageUrl) return
+    const n = parseInt(this.accent.slice(1), 16)
+    // html:root outranks the page's own :root defaults.
+    const css = `html:root{--accent:${this.accent};--accent-rgb:${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}}`
+    const old = this.accentCss.get(id)
+    this.accentCss.set(id, await wc.insertCSS(css))
+    if (old) void wc.removeInsertedCSS(old).catch(() => {})
+  }
+
   close(id: number) {
     const tab = this.tabs.get(id)
     if (!tab) return
     const idx = this.order.indexOf(id)
     this.order.splice(idx, 1)
     this.tabs.delete(id)
+    this.accentCss.delete(id)
     this.win.contentView.removeChildView(tab.view)
     tab.view.webContents.close()
     if (this.order.length === 0) {

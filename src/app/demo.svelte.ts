@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
 import { checkNow, openModelFile, repairActive, setXForm, ws } from '../features/workspace/store.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
@@ -115,6 +116,12 @@ export function installDemo() {
       sl.printers = await api.list()
     }
     console.log(`slice: ${sl.result?.summary?.printTime} ${sl.result?.summary?.filamentG}g layers=${sl.preview.layers} features=${sl.preview.features.map((f) => f.name).join('/')}`)
+  }
+  ;(window as unknown as { __setTheme: (id: string, open: boolean) => void }).__setTheme = (id, open) => {
+    const a = ACCENTS.find((x) => x.id === id)
+    if (a) applyAccent(a)
+    else if (/^#[0-9a-f]{6}$/i.test(id)) applyCustomAccent(id)
+    theme.panelOpen = open
   }
   window.__setLayout = (l: string) => {
     if (l === 'browse' || l === 'split' || l === 'workspace' || l === 'library') ws.layout = l

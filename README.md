@@ -4,7 +4,8 @@ A Windows desktop web browser that becomes a 3D-printing workspace the moment yo
 Browse any model site, download an STL, and it opens beside the page: inspect it, check whether it
 will print, fix scale and orientation, save a copy, and hand it to your slicer without switching apps.
 
-Neon-on-black interface with a selectable glow colour.
+Neon-on-black interface. The theme button (palette, bottom of the left rail) changes the neon colour of
+the whole app, the logo included: mustard yellow by default, seven other presets, or any custom colour.
 
 ## Install
 

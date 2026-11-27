@@ -231,6 +231,10 @@ export interface Api {
     renameGroup(from: string, to: string): void
     deleteGroup(name: string): void
   }
+  theme: {
+    /** Restyles the new-tab page with the neon colour (#RRGGBB). */
+    setAccent(hex: string): void
+  }
   slicer: {
     list(): Promise<SlicersState>
     choose(): Promise<SlicersState>

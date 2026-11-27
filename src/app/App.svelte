@@ -11,6 +11,7 @@
   import { openFromDialog, openFromDownload, remember, toggleWorkspace, ws } from '../features/workspace/store.svelte'
   import { installDemo } from './demo.svelte'
   import { applyAccent, theme } from './theme.svelte'
+  import ThemePanel from './ThemePanel.svelte'
 
   let dragging = $state(false)
   let mainEl: HTMLElement
@@ -93,6 +94,9 @@
       </main>
       {#if downloads.open && downloads.items.length}
         <DownloadsPanel />
+      {/if}
+      {#if theme.panelOpen}
+        <ThemePanel onclose={() => (theme.panelOpen = false)} />
       {/if}
     </div>
   </div>
