@@ -66,6 +66,8 @@ export const ws = $state({
   models: [] as ModelMeta[],
   activeId: null as string | null,
   tool: 'move' as Tool,
+  /** Whether the active tool's options panel (beside the tool rail) is open. */
+  toolPanel: true,
   projection: 'perspective' as Projection,
   wireframe: false,
   bbox: true,
@@ -533,8 +535,17 @@ export async function openDroppedFile(f: File, format: ModelFormat) {
   await openModelFile({ name: f.name, format, size: f.size, data: new Uint8Array(await f.arrayBuffer()) })
 }
 
+/**
+ * Picks a tool and opens its options panel. Picking the tool that is already active toggles the
+ * panel instead; the tool itself stays active.
+ */
 export function setTool(t: Tool) {
+  if (ws.tool === t && t !== 'select') {
+    ws.toolPanel = !ws.toolPanel
+    return
+  }
   ws.tool = t
+  ws.toolPanel = true
   viewer?.setTool(t)
 }
 

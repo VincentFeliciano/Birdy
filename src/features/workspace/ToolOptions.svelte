@@ -33,7 +33,7 @@
   const AXES = ['x', 'y', 'z'] as const
 </script>
 
-{#if xf && size && ws.tool !== 'select'}
+{#if xf && size && ws.tool !== 'select' && ws.toolPanel}
   <div class="opts" role="group" aria-label="{ws.tool} options">
     {#if ws.tool === 'scale'}
       <div class="head">

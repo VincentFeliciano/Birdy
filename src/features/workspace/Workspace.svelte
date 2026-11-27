@@ -201,7 +201,13 @@
 
       <div class="toolrail" role="toolbar" aria-label="Transform tools">
         {#each tools as t}
-          <button class="icon-btn" class:on={ws.tool === t.id} title={`${t.label} (${t.key})`} aria-label={t.label} onclick={() => setTool(t.id)}>
+          <button
+            class="icon-btn"
+            class:on={ws.tool === t.id}
+            title={ws.tool === t.id && t.id !== 'select' ? `${t.label} (${t.key}): click to ${ws.toolPanel ? 'hide' : 'show'} its options` : `${t.label} (${t.key})`}
+            aria-label={t.label}
+            aria-expanded={t.id !== 'select' && ws.tool === t.id ? ws.toolPanel : undefined}
+            onclick={() => setTool(t.id)}>
             <Icon name={t.icon} size={17} />
           </button>
         {/each}

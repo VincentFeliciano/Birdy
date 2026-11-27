@@ -14,7 +14,7 @@ const html = `<!doctype html><html><head><style>
   .tile {
     position: absolute; inset: 14px; border-radius: 112px;
     background: radial-gradient(circle at 50% 40%, #17181d, #0b0c0f 70%);
-    box-shadow: inset 0 0 0 5px rgba(${ACCENT}, .85), inset 0 0 26px rgba(${ACCENT}, .35);
+    box-shadow: inset 0 0 0 14px rgb(${ACCENT}), inset 0 0 34px 14px rgba(${ACCENT}, .35);
   }
   .glow {
     position: absolute; left: 50%; top: 52%; height: 300px; aspect-ratio: 512 / 458; transform: translate(-50%, -50%);

@@ -237,7 +237,7 @@ export class Viewer {
     const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
     this.composer = new EffectComposer(this.renderer, target)
     this.renderPass = new RenderPass(this.scene, this.camera)
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.42, 0.5, 1.0)
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.52, 0.55, 1.0)
     this.composer.addPass(this.renderPass)
     this.composer.addPass(this.bloom)
     this.composer.addPass(new OutputPass())
@@ -266,9 +266,11 @@ export class Viewer {
     const axes = new THREE.AxesHelper(36)
     axes.position.set(-this.bedW / 2, -this.bedD / 2, 0.02)
     ;(axes.material as THREE.LineBasicMaterial).depthWrite = false
+    // A little over full brightness, so the bloom gives the axis lines a soft glow too.
+    ;(axes.material as THREE.LineBasicMaterial).toneMapped = false
     axes.renderOrder = 2
     const colors = axes.geometry.getAttribute('color') as THREE.BufferAttribute
-    const palette = ['#E5484D', '#E5484D', '#46A758', '#46A758', '#3E8EF7', '#3E8EF7'].map((c) => new THREE.Color(c))
+    const palette = ['#E5484D', '#E5484D', '#46A758', '#46A758', '#3E8EF7', '#3E8EF7'].map((c) => new THREE.Color(c).multiplyScalar(1.5))
     palette.forEach((c, i) => colors.setXYZ(i, c.r, c.g, c.b))
     this.bed.add(plate, minor, axes)
     if (!this.neon.parent) this.bed.add(this.neon)
@@ -295,7 +297,7 @@ export class Viewer {
     }
     const major = new THREE.LineSegments(
       gridLines(this.bedW, this.bedD, 50, 0.02),
-      new THREE.LineBasicMaterial({ color: this.accent, transparent: true, opacity: 0.28, depthWrite: false }),
+      new THREE.LineBasicMaterial({ color: this.accent, transparent: true, opacity: 0.36, depthWrite: false }),
     )
     // Plate edge drawn in HDR so the bloom pass makes it glow like a neon tube.
     const hw = this.bedW / 2
@@ -307,7 +309,7 @@ export class Viewer {
         new THREE.Vector3(hw, hd, 0.03),
         new THREE.Vector3(-hw, hd, 0.03),
       ]),
-      new THREE.LineBasicMaterial({ color: this.accent.clone().multiplyScalar(2.2), toneMapped: false, depthWrite: false }),
+      new THREE.LineBasicMaterial({ color: this.accent.clone().multiplyScalar(2.6), toneMapped: false, depthWrite: false }),
     )
     major.renderOrder = 1
     edge.renderOrder = 3

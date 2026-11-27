@@ -8,7 +8,7 @@ import { isFdmKind } from '../types/slicing'
 import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelte'
 import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
-import { addShape, scaleBy, moveBy, rotateBy, undo, redo, setUniform, setDimension, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
+import { addShape, setTool, scaleBy, moveBy, rotateBy, undo, redo, setUniform, setDimension, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseGcodeFolder, chooseMachine, folderLabel, importFrom, installEngine, loadCatalog, openPrinterEditor, saveGcode, setPreset, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 import { BED } from '../features/workspace/store.svelte'
@@ -740,7 +740,20 @@ Shape {
     const demoTool = (window as unknown as { __demoTool?: string }).__demoTool
     if (demoTool === 'move' || demoTool === 'scale' || demoTool === 'rotate') {
       ws.layout = 'workspace'
-      ws.tool = demoTool
+      await new Promise((r) => setTimeout(r, 200))
+      // Click the tool's rail button: it picks the tool; clicking it again hides and shows its panel.
+      const label = demoTool[0]!.toUpperCase() + demoTool.slice(1)
+      const btn = () => document.querySelector<HTMLButtonElement>(`.toolrail button[aria-label="${label}"]`)
+      const panel = () => !!document.querySelector('.opts')
+      const step = async (what: string) => {
+        btn()!.click()
+        await new Promise((r) => setTimeout(r, 150))
+        console.log(`tool ${what}: tool=${ws.tool} panel=${panel()} expanded=${btn()!.getAttribute('aria-expanded')}`)
+      }
+      if (ws.tool === demoTool) setTool('select')
+      await step('pick')
+      await step('again')
+      await step('again')
     }
     if ((window as unknown as { __demoSave?: boolean }).__demoSave) {
       await saveGcode()
