@@ -1,5 +1,5 @@
-import { app, BrowserWindow, ipcMain, Menu, session, type Input } from 'electron'
-import { writeFileSync } from 'node:fs'
+import { app, BrowserWindow, ipcMain, Menu, session, shell, type Input } from 'electron'
+import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { isSearchType, type NewBookmark, type NewLibraryModel, type SaveRequest, type SlicerHandoff } from '../src/types/ipc'
@@ -53,7 +53,7 @@ const startPageUrl = pathToFileURL(join(app.getAppPath(), 'resources', 'start.ht
 
 function sendShortcut(name: string) {
   if (!win) return
-  if (name === 'focus-address' || name === 'palette' || name === 'shortcuts') win.webContents.focus()
+  if (name === 'focus-address' || name === 'palette' || name === 'shortcuts' || name === 'settings') win.webContents.focus()
   win.webContents.send('app:shortcut', name)
 }
 
@@ -70,6 +70,7 @@ function handleShortcut(input: Input): boolean {
     if (browser.activeId) browser.close(browser.activeId)
   } else if ((ctrl && k === 'l') || (input.alt && k === 'd')) sendShortcut('focus-address')
   else if (ctrl && k === 'tab') browser.cycle(input.shift ? -1 : 1)
+  else if (ctrl && k === ',') sendShortcut('settings')
   else if ((ctrl && k === 'r') || k === 'f5') {
     if (input.shift) wc?.reloadIgnoringCache()
     else wc?.reload()
@@ -201,6 +202,16 @@ function registerIpc(exportsDir: string) {
   on('downloads:show', (id) => isId(id) && downloads?.showInFolder(id))
   on('downloads:clear', () => downloads?.clear())
   on('downloads:open-folder', () => downloads?.openFolder())
+  // Settings: the app's own folders. The UI names one; the path is always worked out here.
+  const appFolders = () => {
+    const d = workspaceDirs()
+    return { models: d.models, library: d.library, exports: d.exports, downloads: d.downloads, gcode: eng().gcodeFolder() }
+  }
+  handle('app:folders', async () => appFolders())
+  on('app:open-folder', (which) => {
+    const dir = (appFolders() as Record<string, string | null>)[String(which)]
+    if (dir && existsSync(dir)) void shell.openPath(dir)
+  })
   handle('downloads:read-model', async (id) => {
     if (!isId(id) || !downloads) throw new Error('Unknown download.')
     return downloads.readModel(id)
@@ -402,6 +413,8 @@ function maybeScreenshot() {
       if (resinDemo) await win.webContents.executeJavaScript(`window.__demoResin = ${JSON.stringify(resinDemo)}`)
       const repairDemo = process.argv.find((a) => a.startsWith('--demo-repair='))?.slice('--demo-repair='.length)
       if (repairDemo) await win.webContents.executeJavaScript(`window.__demoRepair = ${JSON.stringify(repairDemo)}`)
+      const settingsDemo = process.argv.find((a) => a.startsWith('--demo-settings='))?.slice('--demo-settings='.length)
+      if (settingsDemo) await win.webContents.executeJavaScript(`window.__demoSettings = ${JSON.stringify(settingsDemo)}`)
       try {
         await win.webContents.executeJavaScript('window.__demo ? window.__demo().then(() => "demo ok") : "no demo hook"').then((r) => console.log(`[demo] ${r}`))
       } catch (err) {

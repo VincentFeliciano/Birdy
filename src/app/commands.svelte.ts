@@ -31,7 +31,7 @@ import {
   ws,
 } from '../features/workspace/store.svelte'
 
-export const ui = $state({ tour: false, palette: false, shortcuts: false, libraryTab: null as null | 'models' | 'bookmarks' | 'history' | 'about' })
+export const ui = $state({ tour: false, palette: false, shortcuts: false, settings: false, libraryTab: null as null | 'models' | 'bookmarks' | 'history' | 'about' })
 
 const TOUR_KEY = 'birdy.tourDone'
 
@@ -173,6 +173,7 @@ export function commands(): Command[] {
     { id: 'slice', title: 'Slice for a filament printer', group: 'Slice', words: 'fdm gcode orca', when: hasModel, run: () => { setSliceMode('fdm'); sidebar('slice') } },
     { id: 'slice-resin', title: 'Slice for a resin printer', group: 'Slice', words: 'goo elegoo saturn mars sla msla', when: hasModel, run: () => { setSliceMode('resin'); sidebar('slice') } },
 
+    { id: 'settings', title: 'Settings', group: 'Boaty', keys: 'Ctrl+,', words: 'preferences options gcode folder prices printers folders', run: () => (ui.settings = true) },
     { id: 'theme', title: 'Change the accent colour…', group: 'Boaty', words: 'theme colour color neon', run: () => (theme.panelOpen = true) },
     { id: 'accent-next', title: 'Next accent colour', group: 'Boaty', words: 'theme cycle', run: cycleAccent },
     { id: 'updates', title: 'Check for updates', group: 'Boaty', words: 'version upgrade', run: checkForUpdates },
@@ -241,6 +242,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     group: 'Anywhere',
     items: [
       ['Ctrl+K', 'Command palette'],
+      ['Ctrl+,', 'Settings'],
       ['Ctrl+/  or  ?', 'This list of shortcuts'],
       ['Ctrl+O', 'Open a model'],
       ['Ctrl+E', 'Switch between website and workspace'],

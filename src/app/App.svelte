@@ -23,6 +23,7 @@
   import ModelsPanel from '../features/models/ModelsPanel.svelte'
   import { addModelToPlate, initModels, models, openModel } from '../features/models/store.svelte'
   import UpdatePanel from './UpdatePanel.svelte'
+  import SettingsPanel from './SettingsPanel.svelte'
   import PrinterBar from '../features/printers/PrinterBar.svelte'
   import { bar, initPrinterBar, networkPrinters } from '../features/printers/status.svelte'
   import { initUpdates, stripVisible } from './updates.svelte'
@@ -103,6 +104,9 @@
       } else if (s === 'shortcuts') {
         ui.palette = false
         ui.shortcuts = !ui.shortcuts
+      } else if (s === 'settings') {
+        ui.palette = false
+        ui.settings = !ui.settings
       }
       else if (s === 'focus-address') {
         if (ws.layout === 'workspace') ws.layout = 'split'
@@ -132,7 +136,7 @@
 
   // The website is a native view; hide it while resizing so the divider keeps the pointer.
   $effect(() => {
-    window.api.layout.setWebVisible((ws.layout === 'browse' || ws.layout === 'split') && !dragging && !fileDrag && !ui.palette && !ui.shortcuts && !ui.tour && !sl.editor)
+    window.api.layout.setWebVisible((ws.layout === 'browse' || ws.layout === 'split') && !dragging && !fileDrag && !ui.palette && !ui.shortcuts && !ui.tour && !ui.settings && !sl.editor)
   })
 
   function startDrag(e: PointerEvent) {
@@ -224,6 +228,9 @@
 {/if}
 {#if sl.editor}
   <PrinterEditor />
+{/if}
+{#if ui.settings}
+  <SettingsPanel />
 {/if}
 
 <style>

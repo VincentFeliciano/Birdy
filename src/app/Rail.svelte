@@ -4,6 +4,7 @@
   import { openFromDialog, ws, type Layout } from '../features/workspace/store.svelte'
   import { theme } from './theme.svelte'
   import { models, setModelsOpen } from '../features/models/store.svelte'
+  import { ui } from './commands.svelte'
 
   const modes: { id: Layout; icon: IconName; label: string }[] = [
     { id: 'browse', icon: 'globe', label: 'Browse' },
@@ -36,6 +37,9 @@
     {#if active}<span class="badge mono">{active}</span>{/if}
   </button>
   <div class="spacer"></div>
+  <button class="icon-btn" class:on={ui.settings} title="Settings (Ctrl+,)" aria-label="Settings" onclick={() => (ui.settings = !ui.settings)}>
+    <Icon name="settings" size={18} />
+  </button>
   <button
     class="icon-btn theme-btn"
     class:on={theme.panelOpen}

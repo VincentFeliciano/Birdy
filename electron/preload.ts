@@ -135,6 +135,8 @@ const api: Api = {
   },
   app: {
     onShortcut: (cb) => on('app:shortcut', cb),
+    folders: () => ipcRenderer.invoke('app:folders'),
+    openFolder: (which) => ipcRenderer.send('app:open-folder', which),
   },
 }
 

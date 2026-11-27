@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ybLogo from '../../assets/yellow-brick.png'
   import Icon from '../../components/Icon.svelte'
   import Logo from '../../components/Logo.svelte'
   import { checkNow, updates } from '../../app/updates.svelte'
@@ -59,6 +60,8 @@
       return url
     }
   }
+
+  const YB_URL = 'https://vincentfeliciano.github.io/yellowbrick'
 
   function openBookmark(url: string) {
     api.tabs.create(url)
@@ -241,6 +244,10 @@
               onclick={checkNow}><Icon name="reload" size={13} />Check for updates</button>
           </div>
           <p>A browser that turns into a 3D-printing workspace. Find a model, check it, fix it, slice it, and send it to your printer without switching apps.</p>
+          <div class="made">
+            <button class="ybl" title="Yellow Brick" aria-label="Yellow Brick website" onclick={() => openBookmark(YB_URL)}><img src={ybLogo} alt="Yellow Brick" /></button>
+            <p>Made by <button class="link" onclick={() => openBookmark(YB_URL)}>Yellow Brick</button> · Vincent Feliciano. AI-assisted code.</p>
+          </div>
           <p class="dim">
             Free software under the GNU AGPL v3.0.
             <button class="link" onclick={() => openBookmark('https://github.com/VincentFeliciano/Birdy')}>Source code</button>
@@ -665,5 +672,27 @@
   .note {
     font-size: 12px;
     color: var(--muted);
+  }
+  .made {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .made p {
+    margin: 0;
+  }
+  .ybl {
+    flex: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    line-height: 0;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .ybl img {
+    display: block;
+    width: 34px;
+    height: auto;
   }
 </style>

@@ -213,9 +213,12 @@ import type {
   PrinterStatus,
 } from './slicing'
 
-export type AppShortcut = 'focus-address' | 'toggle-workspace' | 'open-model' | 'palette' | 'shortcuts'
+export type AppShortcut = 'focus-address' | 'toggle-workspace' | 'open-model' | 'palette' | 'shortcuts' | 'settings'
 
 export type Unsubscribe = () => void
+
+export type AppFolderKey = 'models' | 'library' | 'exports' | 'downloads' | 'gcode'
+export type AppFolders = Record<AppFolderKey, string | null>
 
 export type UpdateStatus = 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error' | 'unsupported'
 
@@ -409,6 +412,10 @@ export interface Api {
   }
   app: {
     onShortcut(cb: (s: AppShortcut) => void): Unsubscribe
+    /** Where Boaty keeps things, for the Settings panel. */
+    folders(): Promise<AppFolders>
+    /** Opens one of those folders in Explorer. */
+    openFolder(which: AppFolderKey): void
   }
 }
 

@@ -168,6 +168,25 @@ export function installDemo() {
       }
       return
     }
+    const settingsDemo = (window as unknown as { __demoSettings?: string }).__demoSettings
+    if (settingsDemo) {
+      // Open Settings (as Ctrl+, does) on one section; "about-page" shows the Library's About tab.
+      if (settingsDemo === 'about-page') {
+        ui.libraryTab = 'about'
+        ws.layout = 'library'
+      } else {
+        ui.settings = true
+        await new Promise((r) => setTimeout(r, 200))
+        const tab = [...document.querySelectorAll<HTMLButtonElement>('.dlg .tabs button')].find((b) => b.textContent?.trim().toLowerCase().startsWith(settingsDemo))
+        if (!tab) throw new Error(`no ${settingsDemo} section`)
+        tab.click()
+      }
+      await new Promise((r) => setTimeout(r, 400))
+      const made = document.querySelector('.made')?.textContent?.replace(/\s+/g, ' ').trim()
+      const img = document.querySelector<HTMLImageElement>('.made img')
+      console.log(`settings ${settingsDemo}: made="${made}" logo=${img?.naturalWidth}x${img?.naturalHeight} paths=${[...document.querySelectorAll('.dlg .path')].map((p) => p.textContent).join(' | ')}`)
+      return
+    }
     const repairDemo = (window as unknown as { __demoRepair?: string }).__demoRepair
     if (repairDemo) {
       await openBrokenSample()
