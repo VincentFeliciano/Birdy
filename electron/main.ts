@@ -145,6 +145,10 @@ function createWindow() {
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
 
   win.webContents.once('did-finish-load', () => {
+    // Screenshot runs start from a fresh profile; keep the first-run tour out of them unless asked.
+    if (process.argv.some((a) => a.startsWith('--screenshot=')) && !process.argv.includes('--demo-tour')) {
+      void win?.webContents.executeJavaScript('window.__noTour = true')
+    }
     browser?.restore()
     maybeScreenshot()
   })

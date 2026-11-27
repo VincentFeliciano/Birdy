@@ -13,7 +13,8 @@
   import CommandPalette from './CommandPalette.svelte'
   import ShortcutsOverlay from './ShortcutsOverlay.svelte'
   import Icon from '../components/Icon.svelte'
-  import { ui } from './commands.svelte'
+  import { maybeStartTour, ui } from './commands.svelte'
+  import Tour from './Tour.svelte'
   import { installDemo } from './demo.svelte'
   import { applyAccent, theme } from './theme.svelte'
   import ThemePanel from './ThemePanel.svelte'
@@ -55,7 +56,7 @@
 
   /** "?" opens the shortcuts list, unless the user is typing. */
   function onKey(e: KeyboardEvent) {
-    if (e.key !== '?' || e.ctrlKey || e.altKey || e.metaKey || ui.palette) return
+    if (e.key !== '?' || e.ctrlKey || e.altKey || e.metaKey || ui.palette || ui.tour) return
     const t = e.target as HTMLElement | null
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
     e.preventDefault()
@@ -91,9 +92,12 @@
     void initUpdates()
     const offModels = initModels()
     const offHistory = initHistory()
+    // Give screenshot runs time to opt out before the first-run tour appears.
+    const tourTimer = setTimeout(maybeStartTour, 1200)
     const offPrinters = initPrinterBar()
     return () => {
       offHistory()
+      clearTimeout(tourTimer)
       offPrinters()
       offStores()
       offLibrary()
@@ -106,7 +110,7 @@
 
   // The website is a native view; hide it while resizing so the divider keeps the pointer.
   $effect(() => {
-    window.api.layout.setWebVisible((ws.layout === 'browse' || ws.layout === 'split') && !dragging && !fileDrag && !ui.palette && !ui.shortcuts)
+    window.api.layout.setWebVisible((ws.layout === 'browse' || ws.layout === 'split') && !dragging && !fileDrag && !ui.palette && !ui.shortcuts && !ui.tour)
   })
 
   function startDrag(e: PointerEvent) {
@@ -187,6 +191,9 @@
     </div>
   </div>
 </div>
+{#if ui.tour}
+  <Tour />
+{/if}
 {#if ui.palette}
   <CommandPalette />
 {/if}

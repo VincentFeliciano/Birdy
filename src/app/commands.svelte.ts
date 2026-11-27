@@ -28,7 +28,26 @@ import {
   ws,
 } from '../features/workspace/store.svelte'
 
-export const ui = $state({ palette: false, shortcuts: false, libraryTab: null as null | 'models' | 'bookmarks' | 'history' | 'about' })
+export const ui = $state({ tour: false, palette: false, shortcuts: false, libraryTab: null as null | 'models' | 'bookmarks' | 'history' | 'about' })
+
+const TOUR_KEY = 'birdy.tourDone'
+
+export function startTour() {
+  ui.palette = false
+  ui.shortcuts = false
+  ui.tour = true
+}
+
+export function finishTour() {
+  ui.tour = false
+  localStorage.setItem(TOUR_KEY, '1')
+}
+
+/** First launch: show the tour once (not in screenshot runs, which set __noTour). */
+export function maybeStartTour() {
+  if (localStorage.getItem(TOUR_KEY) || (window as unknown as { __noTour?: boolean }).__noTour) return
+  startTour()
+}
 
 export interface Command {
   id: string
@@ -139,6 +158,7 @@ export function commands(): Command[] {
     { id: 'theme', title: 'Change the accent colour…', group: 'Birdy', words: 'theme colour color neon', run: () => (theme.panelOpen = true) },
     { id: 'accent-next', title: 'Next accent colour', group: 'Birdy', words: 'theme cycle', run: cycleAccent },
     { id: 'updates', title: 'Check for updates', group: 'Birdy', words: 'version upgrade', run: checkForUpdates },
+    { id: 'tour', title: 'Take the tour', group: 'Birdy', words: 'help welcome intro guide', run: startTour },
     { id: 'shortcuts', title: 'Keyboard shortcuts', group: 'Birdy', keys: '?', words: 'help keys', run: () => (ui.shortcuts = true) },
     {
       id: 'about',

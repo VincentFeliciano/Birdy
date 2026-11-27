@@ -3,7 +3,7 @@ import { importDownloads as importModelsFromDownloads, models as modelsState, op
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
 import { printCost } from './costs.svelte'
-import { commands, search, ui } from './commands.svelte'
+import { commands, search, startTour, ui } from './commands.svelte'
 import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelte'
 import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
@@ -131,6 +131,15 @@ export function installDemo() {
           await new Promise((r) => setTimeout(r, 400))
           console.log(`palette ran: open=${ui.palette} note=${ws.fixNote}`)
         }
+      } else if (what === 'tour') {
+        await openSample()
+        if (!ui.tour) startTour()
+        for (let k = 0; k < Number(arg || 0); k++) {
+          await new Promise((r) => setTimeout(r, 300))
+          document.querySelector<HTMLButtonElement>('.tour .primary')?.click()
+        }
+        await new Promise((r) => setTimeout(r, 700))
+        console.log(`tour: open=${ui.tour} title=${document.querySelector('#tour-title')?.textContent} hole=${!!document.querySelector('.tour .hole')} layout=${ws.layout}`)
       } else if (what === 'shortcuts') {
         ws.layout = 'split'
         window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))
