@@ -132,7 +132,8 @@
 <style>
   .opts {
     position: absolute;
-    right: 60px;
+    /* Clear of the tool rail and of the layer bar (right 56–90px) when toolpaths are shown. */
+    right: 100px;
     top: 50%;
     transform: translateY(-50%);
     width: 206px;

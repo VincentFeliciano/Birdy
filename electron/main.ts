@@ -373,7 +373,7 @@ function maybeScreenshot() {
     if (!win) return
     if (demo) {
       const sliceFor = process.argv.find((a) => a.startsWith('--demo-slice='))?.slice('--demo-slice='.length)
-      if (sliceFor) await win.webContents.executeJavaScript(`window.__demoSlice = ${JSON.stringify(sliceFor)}; window.__demoSave = ${!!process.env.BIRDY_DEMO_SAVE}`)
+      if (sliceFor) await win.webContents.executeJavaScript(`window.__demoSlice = ${JSON.stringify(sliceFor)}; window.__demoSave = ${!!process.env.BIRDY_DEMO_SAVE}; window.__demoTool = ${JSON.stringify(process.env.BIRDY_DEMO_TOOL ?? '')}`)
       const printersPort = process.argv.find((a) => a.startsWith('--demo-printers='))?.slice('--demo-printers='.length)
       if (printersPort) await win.webContents.executeJavaScript(`window.__demoPrinters = ${JSON.stringify(printersPort)}`)
       if (process.argv.includes('--demo-install')) await win.webContents.executeJavaScript('window.__demoInstall = true')

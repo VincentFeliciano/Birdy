@@ -717,6 +717,12 @@ Shape {
       sl.printers = await api.list()
     }
     console.log(`slice: ${sl.result?.summary?.printTime} ${sl.result?.summary?.filamentG}g layers=${sl.preview.layers} features=${sl.preview.features.map((f) => f.name).join('/')}`)
+    // A transform tool open over the toolpath preview (to check the two don't overlap).
+    const demoTool = (window as unknown as { __demoTool?: string }).__demoTool
+    if (demoTool === 'move' || demoTool === 'scale' || demoTool === 'rotate') {
+      ws.layout = 'workspace'
+      ws.tool = demoTool
+    }
     if ((window as unknown as { __demoSave?: boolean }).__demoSave) {
       await saveGcode()
       console.log(`save: notice=${ws.notice?.text} error=${sl.error}`)
