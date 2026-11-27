@@ -127,10 +127,12 @@ let viewer: Viewer | null = null
 export const getViewer = () => viewer
 
 type ModelChange = 'switch' | 'edit'
-let modelListener: ((change: ModelChange) => void) | null = null
-/** Lets the slicing panel drop or mark stale its preview when the model changes. */
-export function onModelChange(fn: ((change: ModelChange) => void) | null) {
-  modelListener = fn
+const modelListeners = new Set<(change: ModelChange) => void>()
+const modelListener = { call: (c: ModelChange) => modelListeners.forEach((fn) => fn(c)) }
+/** Lets the slicing panels drop or mark stale their previews when the model changes. */
+export function onModelChange(fn: (change: ModelChange) => void) {
+  modelListeners.add(fn)
+  return () => modelListeners.delete(fn)
 }
 
 /** Sets the build volume to a printer's (mm) and re-checks the model against it. */
@@ -154,7 +156,7 @@ export function attachViewer(v: Viewer | null) {
   v.setBedSize(BED.x, BED.y)
   v.onTransform = (live) => {
     markModified()
-    if (!live) modelListener?.('edit')
+    if (!live) modelListener.call('edit')
     refresh(!live)
     if (!live) scheduleCheck()
   }
@@ -330,7 +332,7 @@ export async function openModelFile(file: ModelFile) {
 export function activate(id: string, frame = false) {
   const doc = docs.get(id)
   if (!doc) return
-  if (ws.activeId !== id) modelListener?.('switch')
+  if (ws.activeId !== id) modelListener.call('switch')
   ws.activeId = id
   ws.report = doc.report
   ws.markFocus = null
@@ -350,7 +352,7 @@ export function closeModel(id: string) {
   const doc = docs.get(id)
   if (!doc) return
   const idx = ws.models.findIndex((m) => m.id === id)
-  if (ws.activeId === id) modelListener?.('switch')
+  if (ws.activeId === id) modelListener.call('switch')
   ws.models.splice(idx, 1)
   docs.delete(id)
   disposeTree(doc.wrapper)
@@ -438,7 +440,7 @@ function apply(fn: (w: THREE.Group, doc: Doc) => void) {
   fn(doc.sel, doc)
   doc.wrapper.updateMatrixWorld(true)
   markModified()
-  modelListener?.('edit')
+  modelListener.call('edit')
   viewer?.changed()
   refresh()
   scheduleCheck()
@@ -616,7 +618,7 @@ export function undoRepair() {
 function afterGeometryChange(doc: Doc) {
   doc.wrapper.updateMatrixWorld(true)
   markModified()
-  modelListener?.('edit')
+  modelListener.call('edit')
   doc.marks = null
   if (docs.get(ws.activeId ?? '') === doc) {
     showMarks(false)
@@ -885,7 +887,7 @@ export function arrangePlate(): boolean {
 function afterPlateChange(doc: Doc) {
   doc.wrapper.updateMatrixWorld(true)
   markModified()
-  modelListener?.('edit')
+  modelListener.call('edit')
   doc.report = null
   if (docs.get(ws.activeId ?? '') === doc) {
     syncParts(doc)

@@ -1,10 +1,9 @@
-import type { ResinWorkerJob } from './resin.worker'
-import type { ResinOutput } from './slice'
+import type { ResinWorkerJob, ResinWorkerOutput } from './resin.worker'
 
 let current: Worker | null = null
 
 /** Runs one resin slice in its own worker. `cancelResin` stops it. */
-export function runResin(job: ResinWorkerJob, onProgress: (done: number) => void): Promise<ResinOutput> {
+export function runResin(job: ResinWorkerJob, onProgress: (done: number) => void): Promise<ResinWorkerOutput> {
   cancelResin()
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./resin.worker.ts', import.meta.url), { type: 'module' })
@@ -13,7 +12,7 @@ export function runResin(job: ResinWorkerJob, onProgress: (done: number) => void
       worker.terminate()
       if (current === worker) current = null
     }
-    worker.onmessage = (e: MessageEvent<{ progress?: number; result?: ResinOutput; error?: string }>) => {
+    worker.onmessage = (e: MessageEvent<{ progress?: number; result?: ResinWorkerOutput; error?: string }>) => {
       if (e.data.progress !== undefined) return onProgress(e.data.progress)
       done()
       if (e.data.result) resolve(e.data.result)

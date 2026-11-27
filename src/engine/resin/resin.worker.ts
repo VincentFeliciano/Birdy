@@ -1,6 +1,8 @@
 import { exposureTest } from './exposureTest'
 import type { ResinPrinter, ResinSettings } from './printers'
-import { sliceResin } from './slice'
+import { sliceSupported } from './pipeline'
+import type { HollowSettings, ResinOutput } from './slice'
+import type { SupportSettings } from './supports'
 
 export interface ResinWorkerJob {
   /** 'test' builds the exposure test print instead of slicing a model. */
@@ -12,6 +14,13 @@ export interface ResinWorkerJob {
   softwareVersion: string
   smallPreview?: Uint8ClampedArray
   bigPreview?: Uint8ClampedArray
+  supports?: SupportSettings
+  hollow?: HollowSettings
+}
+
+export interface ResinWorkerOutput extends ResinOutput {
+  /** Supports Birdy added: how many, how many stand on the model, the lift, and their triangles for the 3D view. */
+  support?: { count: number; onModel: number; lift: number; preview: Float32Array }
 }
 
 /** Binary STL to non-indexed triangle positions. */
@@ -36,13 +45,17 @@ self.onmessage = (e: MessageEvent<ResinWorkerJob>) => {
       return
     }
     let last = 0
-    const result = sliceResin({ ...job, positions: stlTriangles(job.stl) }, (done) => {
+    const { support: gen, ...sliced } = sliceSupported(job, stlTriangles(job.stl), job.supports, (done) => {
       if (done - last >= 0.01 || done === 1) {
         last = done
         self.postMessage({ progress: done })
       }
     })
-    self.postMessage({ result }, { transfer: result.parts.map((p) => p.buffer as ArrayBuffer) })
+    const support = gen ? { count: gen.count, onModel: gen.onModel, lift: gen.lift, preview: gen.supports } : undefined
+    const result: ResinWorkerOutput = { ...sliced, support }
+    const transfer = result.parts.map((p) => p.buffer as ArrayBuffer)
+    if (support) transfer.push(support.preview.buffer as ArrayBuffer)
+    self.postMessage({ result }, { transfer })
   } catch (err) {
     self.postMessage({ error: (err as Error).message })
   }

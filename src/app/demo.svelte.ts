@@ -9,7 +9,7 @@ import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelt
 import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
 import { arrangePlate, autoOrient, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
-import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
+import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
 /** Builds a small printable sample (a torus knot, ~70 mm) as a real binary STL and opens it. */
@@ -288,7 +288,7 @@ export function installDemo() {
       return
     }
     const resinDemo = (window as unknown as { __demoResin?: string }).__demoResin
-    if (resinDemo?.endsWith(':islands')) await openIslandSample()
+    if (resinDemo?.endsWith(':islands') || resinDemo?.endsWith(':supports')) await openIslandSample()
     else await openSample()
     ws.layout = 'split'
     if (resinDemo) {
@@ -297,6 +297,8 @@ export function installDemo() {
       setSliceMode('resin')
       chooseResinPrinter(resinDemo.split(':')[0]!)
       const t0 = performance.now()
+      setSupport('enabled', resinDemo.endsWith(':supports') || resinDemo.endsWith(':hollow'))
+      setHollow('enabled', resinDemo.endsWith(':hollow'))
       if (resinDemo.endsWith(':test')) await makeExposureTest()
       else await sliceResinModel()
       const r = resin.result
@@ -309,6 +311,7 @@ export function installDemo() {
         const list = document.querySelector('.islands')
         list?.scrollIntoView({ block: 'center' })
       }
+      if (r?.support || r?.hollow) console.log(`resin extras: ${JSON.stringify({ support: r.support, hollow: r.hollow, islands: r.islandCount })}`)
       console.log(`resin: ${resin.error ?? `${r?.layers} layers ${((r?.bytes ?? 0) / 1e6).toFixed(1)}MB ${((r?.volumeMm3 ?? 0) / 1000).toFixed(1)}ml ${Math.round(r?.printSeconds ?? 0)}s in ${Math.round(performance.now() - t0)}ms`}`)
       if (resinDemo.endsWith(':send')) {
         // Wi-Fi send to the local mock Elegoo printer (tests/mock-elegoo.mjs).

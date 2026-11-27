@@ -1,11 +1,12 @@
 import { BIG_PREVIEW, decodeLayer, SMALL_PREVIEW } from '../../engine/resin/goo'
 import { DEFAULT_RESIN, RESIN_PRINTERS, type ResinPrinter, type ResinSettings } from '../../engine/resin/printers'
 import { cancelResin, runResin } from '../../engine/resin/runResin'
-import type { ResinIsland } from '../../engine/resin/slice'
+import type { HollowSettings, ResinIsland } from '../../engine/resin/slice'
+import { DEFAULT_SUPPORTS, type SupportSettings } from '../../engine/resin/supports'
 import { updates } from '../../app/updates.svelte'
 import { printCost } from '../../app/costs.svelte'
 import { recordPrint } from '../history/history.svelte'
-import { activeModel, BED, exportActive, getViewer, setBed, ws } from '../workspace/store.svelte'
+import { activeModel, BED, exportActive, getViewer, onModelChange, setBed, ws } from '../workspace/store.svelte'
 
 // Resin (MSLA) slicing: Birdy's own slicer writing Elegoo .goo files.
 
@@ -36,13 +37,24 @@ export interface ResinResult {
   islandCount: number
   /** For the exposure test print: each piece's exposure, left to right. */
   test?: number[]
+  support?: { count: number; onModel: number; lift: number }
+  hollow?: { savedMm3: number; holes: number; blocked: number; cavity: boolean; drain: boolean }
 }
+
+export interface HollowChoice extends HollowSettings {
+  enabled: boolean
+}
+const DEFAULT_HOLLOW: HollowChoice = { enabled: false, wall: 2, drain: true, diameter: 3, holes: 2 }
 
 export const resin = $state({
   mode: (localStorage.getItem('birdy.sliceMode') === 'resin' ? 'resin' : 'fdm') as SliceMode,
   printerId: localStorage.getItem('birdy.resinPrinter') ?? RESIN_PRINTERS[1]!.id,
   custom: load('birdy.resinCustom', CUSTOM),
   settings: load('birdy.resinSettings', DEFAULT_RESIN),
+  supports: { ...DEFAULT_SUPPORTS, ...load<Partial<SupportSettings>>('birdy.resinSupports', {}) } as SupportSettings,
+  hollow: { ...DEFAULT_HOLLOW, ...load<Partial<HollowChoice>>('birdy.resinHollow', {}) } as HollowChoice,
+  /** Draw the supports in the 3D view. */
+  showSupports: true,
   slicing: false,
   progress: 0,
   error: null as string | null,
@@ -110,6 +122,8 @@ function persist() {
   localStorage.setItem('birdy.resinPrinter', resin.printerId)
   localStorage.setItem('birdy.resinCustom', JSON.stringify(resin.custom))
   localStorage.setItem('birdy.resinSettings', JSON.stringify(resin.settings))
+  localStorage.setItem('birdy.resinSupports', JSON.stringify(resin.supports))
+  localStorage.setItem('birdy.resinHollow', JSON.stringify(resin.hollow))
 }
 
 /** Shows the resin printer's plate in the 3D view and checks the model against it. */
@@ -132,9 +146,17 @@ export function setMode(mode: SliceMode) {
   }
 }
 
+let watching = false
 /** Called when the Slice tab opens in resin mode (e.g. after a restart). */
 export function initResin() {
   if (resin.mode === 'resin') applyBed()
+  if (!watching) {
+    watching = true
+    // A sliced file with supports or hollowing belongs to the model as it was: drop it on any edit.
+    onModelChange(() => {
+      if (resin.result && (resin.result.support || resin.result.hollow)) clearResult()
+    })
+  }
 }
 
 export function choosePrinter(id: string) {
@@ -157,6 +179,28 @@ export function setSetting<K extends keyof ResinSettings>(key: K, value: ResinSe
   clearResult()
 }
 
+export function setSupport<K extends keyof SupportSettings>(key: K, value: SupportSettings[K]) {
+  resin.supports[key] = value
+  persist()
+  clearResult()
+}
+
+export function setHollow<K extends keyof HollowChoice>(key: K, value: HollowChoice[K]) {
+  resin.hollow[key] = value
+  persist()
+  clearResult()
+}
+
+/** Supports drawn in the 3D view (kept out of reactive state). */
+let supportPreview: { triangles: Float32Array; lift: number } | null = null
+function showSupports() {
+  getViewer()?.setSupports(resin.showSupports && supportPreview ? supportPreview.triangles : null, supportPreview?.lift ?? 0)
+}
+export function toggleSupportView(on: boolean) {
+  resin.showSupports = on
+  showSupports()
+}
+
 export function resetSettings() {
   resin.settings = { ...DEFAULT_RESIN }
   persist()
@@ -165,6 +209,8 @@ export function resetSettings() {
 
 export function clearResult() {
   parts = null
+  supportPreview = null
+  getViewer()?.setSupports(null)
   slicedAt = null
   resin.island = -1
   getViewer()?.setIslands(null, null)
@@ -199,6 +245,8 @@ async function previews(): Promise<{ small?: Uint8ClampedArray; big?: Uint8Clamp
   return { small: draw(SMALL_PREVIEW), big: draw(BIG_PREVIEW) }
 }
 
+const settingsSupports = () => $state.snapshot(resin.supports)
+
 export async function sliceResinModel() {
   const model = activeModel()
   const stl = exportActive('stl')
@@ -220,6 +268,8 @@ export async function sliceResinModel() {
         softwareVersion: updates.state?.current ?? 'dev',
         smallPreview: pv.small,
         bigPreview: pv.big,
+        supports: { ...settingsSupports() },
+        hollow: resin.hollow.enabled ? { wall: resin.hollow.wall, drain: resin.hollow.drain, diameter: resin.hollow.diameter, holes: resin.hollow.holes } : undefined,
       },
       (p) => (resin.progress = p),
     )
@@ -236,7 +286,11 @@ export async function sliceResinModel() {
       name: model.name.replace(/\.[^.]+$/, ''),
       islands: out.islands,
       islandCount: out.islandCount,
+      support: out.support ? { count: out.support.count, onModel: out.support.onModel, lift: out.support.lift } : undefined,
+      hollow: out.hollow ? { ...out.hollow, drain: resin.hollow.drain } : undefined,
     }
+    supportPreview = out.support ? { triangles: out.support.preview, lift: out.support.lift } : null
+    showSupports()
     slicedAt = at
     showIslands()
     showLayer(out.islands[0]?.layer ?? Math.floor(out.layers / 3))

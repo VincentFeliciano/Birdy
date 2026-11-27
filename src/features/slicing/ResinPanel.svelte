@@ -17,6 +17,9 @@
     resin,
     resinPrinter,
     saveResin,
+    setHollow,
+    setSupport,
+    toggleSupportView,
     sendResin,
     chooseSendTo,
     setCustom,
@@ -32,6 +35,20 @@
   const wifi = $derived(sl.printers.filter((p) => p.kind === 'elegoo'))
   const sendTo = $derived(wifi.find((p) => p.id === resin.sendTo) ?? wifi[0])
   const s = $derived(resin.settings)
+  const sup = $derived(resin.supports)
+  const hol = $derived(resin.hollow)
+  function setSup(key: 'lift' | 'spacing' | 'tip' | 'angle', e: Event, min: number, max: number) {
+    const el = e.currentTarget as HTMLInputElement
+    const v = Number(el.value)
+    if (Number.isFinite(v) && v >= min && v <= max) setSupport(key, v)
+    else el.value = String(resin.supports[key])
+  }
+  function setHol(key: 'wall' | 'diameter', e: Event, min: number, max: number) {
+    const el = e.currentTarget as HTMLInputElement
+    const v = Number(el.value)
+    if (Number.isFinite(v) && v >= min && v <= max) setHollow(key, v)
+    else el.value = String(resin.hollow[key])
+  }
   const r = $derived(resin.result)
   const pxUm = $derived(`${((printer.sizeX / printer.resX) * 1000).toFixed(0)} × ${((printer.sizeY / printer.resY) * 1000).toFixed(0)} µm`)
 
@@ -108,7 +125,41 @@
       <input type="checkbox" checked={s.mirror} onchange={(e) => setSetting('mirror', e.currentTarget.checked)} />
       Mirror layer images
     </label>
-    <p class="hint small">Birdy slices the model as it is and doesn’t add supports yet, so use pre-supported models or ones that sit flat on the plate.</p>
+  </section>
+
+  <section>
+    <h3 class="hud-label">Supports &amp; hollowing</h3>
+    <label class="check">
+      <input type="checkbox" checked={sup.enabled} onchange={(e) => setSupport('enabled', e.currentTarget.checked)} />
+      Add supports <span class="dim">(leave off for pre-supported models)</span>
+    </label>
+    {#if sup.enabled}
+      <div class="grid2">
+        <label class="field"><span>Lift off plate <i>mm</i></span><input type="number" min="2" max="30" step="0.5" value={sup.lift} onchange={(e) => setSup('lift', e, 2, 30)} /></label>
+        <label class="field"><span>Spacing <i>mm</i></span><input type="number" min="1" max="10" step="0.5" value={sup.spacing} onchange={(e) => setSup('spacing', e, 1, 10)} /></label>
+        <label class="field"><span>Tip size <i>mm</i></span><input type="number" min="0.1" max="1.5" step="0.05" value={sup.tip} onchange={(e) => setSup('tip', e, 0.1, 1.5)} /></label>
+        <label class="field"><span>Support below <i>°</i></span><input type="number" min="10" max="80" step="5" value={sup.angle} onchange={(e) => setSup('angle', e, 10, 80)} /></label>
+      </div>
+      <p class="hint small">Pins under every surface flatter than the angle and every lowest point, on a raft. Smaller spacing holds better; a smaller tip leaves smaller marks.</p>
+    {/if}
+    <label class="check">
+      <input type="checkbox" checked={hol.enabled} onchange={(e) => setHollow('enabled', e.currentTarget.checked)} />
+      Hollow the model <span class="dim">(saves resin on big solid parts)</span>
+    </label>
+    {#if hol.enabled}
+      <div class="grid2">
+        <label class="field"><span>Wall <i>mm</i></span><input type="number" min="0.8" max="10" step="0.1" value={hol.wall} onchange={(e) => setHol('wall', e, 0.8, 10)} /></label>
+        <label class="field"><span>Drain hole <i>mm</i></span><input type="number" min="1" max="10" step="0.5" value={hol.diameter} disabled={!hol.drain} onchange={(e) => setHol('diameter', e, 1, 10)} /></label>
+      </div>
+      <label class="check">
+        <input type="checkbox" checked={hol.drain} onchange={(e) => setHollow('drain', e.currentTarget.checked)} />
+        Drain holes in the floor
+        <select class="mini" value={String(hol.holes)} disabled={!hol.drain} onchange={(e) => setHollow('holes', Number(e.currentTarget.value))}>
+          <option value="1">1</option>
+          <option value="2">2</option>
+        </select>
+      </label>
+    {/if}
   </section>
 
   <section>
@@ -138,6 +189,24 @@
           <span class="k">Cost</span><span class="v mono">{fmtMoney(printCost('resin', r.volumeMm3 / 1000, r.printSeconds)?.total)}</span>
         </div>
       </div>
+      {#if r.support}
+        <p class="note">
+          <b>{r.support.count}</b> supports{r.support.onModel ? ` (${r.support.onModel} standing on the model)` : ''}, model raised {r.support.lift} mm on a raft.
+          <label class="inline"><input type="checkbox" checked={resin.showSupports} onchange={(e) => toggleSupportView(e.currentTarget.checked)} />Show in 3D</label>
+        </p>
+      {/if}
+      {#if r.hollow}
+        {#if r.hollow.cavity}
+          <p class="note">Hollowed: saves <b>{(r.hollow.savedMm3 / 1000).toFixed(1)} ml</b> of resin{r.hollow.holes ? `, ${r.hollow.holes} drain hole${r.hollow.holes > 1 ? 's' : ''} in the floor` : ''}.</p>
+          {#if r.hollow.blocked}
+            <p class="err">No drain hole could open: the floor sits on the plate. Turn on supports so the model is raised, or resin stays trapped inside and can crack the print.</p>
+          {:else if !r.hollow.drain}
+            <p class="err">Without drain holes the uncured resin stays trapped inside and can crack the print later.</p>
+          {/if}
+        {:else}
+          <p class="hint small">Nothing was thick enough to hollow with {resin.hollow.wall} mm walls, so it prints solid.</p>
+        {/if}
+      {/if}
       <PricesEditor kind="resin" />
       {#if r.test}
         <!-- The test print has no islands to check. -->
@@ -230,6 +299,34 @@
 </footer>
 
 <style>
+  .note {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .note b {
+    color: var(--text);
+  }
+  .inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  select.mini {
+    margin-left: auto;
+    height: 22px;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+  }
   .send {
     margin-top: 14px;
     padding-top: 10px;

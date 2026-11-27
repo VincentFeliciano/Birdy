@@ -139,6 +139,8 @@ export class Viewer {
   private markFocused = false
   /** Resin islands: rings in slice space, carried along with the model like the problem marks. */
   private islands = new THREE.Group()
+  /** Support preview: the supports plus raised stand-ins of the model's meshes. */
+  private supportView: THREE.Group | null = null
   private islandCenters: THREE.Vector3[] = []
   private islandAtInv = new THREE.Matrix4()
   private islandFocus = -1
@@ -502,6 +504,44 @@ export class Viewer {
     this.ringCenters = []
     this.markPulse = []
     this.markFocused = false
+  }
+
+  /**
+   * Shows supports under the model as it will print: raised by `lift` above the plate. The real
+   * model is hidden meanwhile and stand-ins (sharing its geometry) are drawn raised.
+   */
+  setSupports(triangles: Float32Array | null, lift = 0) {
+    if (this.supportView) {
+      this.scene.remove(this.supportView)
+      for (const o of this.supportView.children) if (o.userData.own) (o as THREE.Mesh).geometry.dispose()
+      this.supportView = null
+      if (this.model) this.model.visible = true
+      this.gizmo.getHelper().visible = true
+    }
+    if (!triangles?.length || !this.model) return
+    this.model.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(this.model, true)
+    const dz = lift - box.min.z
+    const g = new THREE.Group()
+    const shift = new THREE.Matrix4().makeTranslation(0, 0, dz)
+    this.model.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (!m.isMesh || !m.visible) return
+      const copy = new THREE.Mesh(m.geometry, m.material)
+      copy.matrixAutoUpdate = false
+      copy.matrix.multiplyMatrices(shift, m.matrixWorld)
+      g.add(copy)
+    })
+    const geom = new THREE.BufferGeometry()
+    geom.setAttribute('position', new THREE.BufferAttribute(triangles, 3))
+    geom.computeVertexNormals()
+    const sup = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ color: 0x9fb3c8, roughness: 0.55, metalness: 0.05 }))
+    sup.userData.own = true
+    g.add(sup)
+    this.model.visible = false
+    this.gizmo.getHelper().visible = false
+    this.supportView = g
+    this.scene.add(g)
   }
 
   /** The shown model's current world transform. */
