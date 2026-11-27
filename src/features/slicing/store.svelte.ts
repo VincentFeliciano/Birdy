@@ -1,3 +1,4 @@
+import { isFdmKind } from '../../types/slicing'
 import { tick } from 'svelte'
 import type {
   EngineState,
@@ -373,7 +374,7 @@ export function choosePrinter(id: string) {
 
 export async function sendToPrinter() {
   const id = sl.result?.jobId
-  const printer = sl.printers.find((p) => p.id === sl.printerId)
+  const printer = sl.printers.find((p) => p.id === sl.printerId && isFdmKind(p.kind)) ?? sl.printers.find((p) => isFdmKind(p.kind))
   if (!id || !printer) return
   sl.sendResult = null
   if (printer.kind === 'serial') {

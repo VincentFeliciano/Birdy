@@ -4,11 +4,12 @@ import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
 import { printCost } from './costs.svelte'
 import { commands, search, startTour, ui } from './commands.svelte'
+import { isFdmKind } from '../types/slicing'
 import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelte'
 import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
 import { arrangePlate, autoOrient, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
-import { choosePrinter as chooseResinPrinter, makeExposureTest, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
+import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
 /** Builds a small printable sample (a torus knot, ~70 mm) as a real binary STL and opens it. */
@@ -309,6 +310,30 @@ export function installDemo() {
         list?.scrollIntoView({ block: 'center' })
       }
       console.log(`resin: ${resin.error ?? `${r?.layers} layers ${((r?.bytes ?? 0) / 1e6).toFixed(1)}MB ${((r?.volumeMm3 ?? 0) / 1000).toFixed(1)}ml ${Math.round(r?.printSeconds ?? 0)}s in ${Math.round(performance.now() - t0)}ms`}`)
+      if (resinDemo.endsWith(':send')) {
+        // Wi-Fi send to the local mock Elegoo printer (tests/mock-elegoo.mjs).
+        const api = window.api.printers
+        for (const p of await api.list()) await api.remove(p.id)
+        const nobody = (await api.save({ name: 'Wrong address', kind: 'elegoo', url: '127.0.0.2' })).find((p) => p.name === 'Wrong address')!
+        console.log(`sdcp test wrong: ${JSON.stringify(await api.test(nobody.id))}`)
+        await api.remove(nobody.id)
+        const list = await api.save({ name: 'Saturn 4 Ultra', kind: 'elegoo', url: '127.0.0.1' })
+        sl.printers = list
+        const p = list[0]!
+        console.log(`sdcp test: ${JSON.stringify(await api.test(p.id))}`)
+        console.log(`sdcp not offered for G-code: ${!sl.printers.filter((x) => isFdmKind(x.kind)).length}`)
+        resin.startPrint = true
+        await sendResin(p.id, p.name)
+        console.log(`sdcp send: ${JSON.stringify(resin.sendResult)}`)
+        setBarHidden(false)
+        refreshPrinters()
+        await until(() => bar.status[p.id]?.state === 'printing', 10_000)
+        togglePrinter(p.id)
+        console.log(`sdcp status: ${JSON.stringify(bar.status[p.id])}`)
+        await new Promise((res) => setTimeout(res, 600))
+        const sc2 = document.querySelector('.sidebar .scroll')
+        if (sc2) sc2.scrollTop = sc2.scrollHeight
+      }
       return
     }
     const sliceDemo = new URLSearchParams(location.search).get('demo') ?? (window as unknown as { __demoSlice?: string }).__demoSlice

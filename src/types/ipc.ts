@@ -348,6 +348,8 @@ export interface Api {
   resin: {
     /** Save dialog for a sliced resin file, sent in pieces. */
     save(req: { suggestedName: string; parts: Uint8Array[] }): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>
+    /** Uploads to an Elegoo printer over Wi-Fi (SDCP) and optionally starts printing. */
+    send(req: { printerId: string; name: string; parts: Uint8Array[]; start: boolean }): Promise<SendResult>
     reveal(path: string): void
   }
   slicer: {

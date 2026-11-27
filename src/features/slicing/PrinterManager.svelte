@@ -2,12 +2,14 @@
   import Icon from '../../components/Icon.svelte'
   import type { PrinterInfo, PrinterKind, PrinterTestResult } from '../../types/slicing'
   import { sl } from './store.svelte'
+  import { resin } from './resin.svelte'
   import { bar, refreshPrinters, setBarHidden } from '../printers/status.svelte'
 
   const kinds: { id: PrinterKind; label: string; hint: string }[] = [
     { id: 'octoprint', label: 'OctoPrint', hint: 'Address of your OctoPrint (e.g. octopi.local) and an API key from its Settings → Application Keys.' },
     { id: 'moonraker', label: 'Klipper (Moonraker)', hint: 'Address of Mainsail or Fluidd (e.g. 192.168.1.50). An API key is only needed if you turned one on.' },
     { id: 'prusalink', label: 'PrusaLink', hint: 'Printer address. Use the username and password shown on the printer, or an API key on older firmware.' },
+    { id: 'elegoo', label: 'Elegoo resin (Wi-Fi)', hint: 'Address shown on the printer’s screen (Settings → Network), e.g. 192.168.1.60. For Saturn 4 / Mars 5 series and other printers with Elegoo’s SDCP V3 network protocol; no key needed.' },
     { id: 'serial', label: 'USB cable', hint: 'Marlin-compatible printers connected to this PC. Birdy streams the G-code; keep it open while printing.' },
   ]
   const bauds = [115200, 250000, 57600, 230400, 500000, 38400, 19200, 9600]
@@ -21,7 +23,7 @@
 
   function startAdd() {
     error = null
-    editing = { name: '', kind: 'octoprint', url: '', secret: '', username: '', baudRate: 115200, hasSecret: false }
+    editing = { name: '', kind: resin.mode === 'resin' ? 'elegoo' : 'octoprint', url: '', secret: '', username: '', baudRate: 115200, hasSecret: false }
   }
 
   function startEdit(p: PrinterInfo) {
@@ -156,6 +158,7 @@
             <input type="text" spellcheck="false" autocomplete="off" bind:value={editing.username} />
           </label>
         {/if}
+        {#if editing.kind !== 'elegoo'}
         <label class="field">
           <span>
             {editing.kind === 'prusalink' && editing.username ? 'Password' : 'API key'}
@@ -163,6 +166,7 @@
           </span>
           <input type="password" autocomplete="off" spellcheck="false" bind:value={editing.secret} placeholder={editing.hasSecret ? '••••••••' : ''} />
         </label>
+        {/if}
         {#if editing.hasSecret}<button class="link" onclick={forgetKey}>Forget saved key</button>{/if}
       {/if}
       {#if error}<p class="err">{error}</p>{/if}

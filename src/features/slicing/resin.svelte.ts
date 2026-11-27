@@ -54,7 +54,46 @@ export const resin = $state({
   layerUrl: null as string | null,
   /** Island picked in the list (index into result.islands), or -1. */
   island: -1,
+  /** Elegoo printer to send to over Wi-Fi. */
+  sendTo: localStorage.getItem('birdy.resinSendTo') ?? '',
+  startPrint: true,
+  sending: false,
+  sendResult: null as { ok: boolean; detail: string } | null,
 })
+
+export function chooseSendTo(id: string) {
+  resin.sendTo = id
+  localStorage.setItem('birdy.resinSendTo', id)
+}
+
+/** Uploads the sliced file to an Elegoo printer over Wi-Fi (and starts it when asked). */
+export async function sendResin(printerId: string, printerName: string) {
+  const r = resin.result
+  if (!parts || !r) return
+  resin.sending = true
+  resin.sendResult = null
+  try {
+    resin.sendResult = await window.api.resin.send({ printerId, name: `${r.name}.goo`, parts, start: resin.startPrint })
+    if (resin.sendResult.ok) {
+      const s = resin.settings
+      void recordPrint({
+        name: r.test ? `Exposure test (${r.test.join(' / ')} s)` : (activeModel()?.name ?? `${r.name}.stl`),
+        kind: 'resin',
+        how: 'sent',
+        printer: printerName,
+        seconds: r.printSeconds,
+        grams: r.weightG,
+        ml: r.volumeMm3 / 1000,
+        cost: printCost('resin', r.volumeMm3 / 1000, r.printSeconds)?.total ?? null,
+        settings: `${s.layerHeight} mm layers · ${s.exposure} s / ${s.bottomExposure} s × ${s.bottomLayers}`,
+      })
+    }
+  } catch (err) {
+    resin.sendResult = { ok: false, detail: (err as Error).message }
+  } finally {
+    resin.sending = false
+  }
+}
 
 /** The finished file, kept out of reactive state (it can be hundreds of MB). */
 let parts: Uint8Array[] | null = null

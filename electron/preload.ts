@@ -91,6 +91,7 @@ const api: Api = {
   resin: {
     save: (req) => ipcRenderer.invoke('resin:save', req),
     reveal: (path) => ipcRenderer.send('resin:reveal', path),
+    send: (req) => ipcRenderer.invoke('resin:send', req),
   },
   slicer: {
     list: () => ipcRenderer.invoke('slicer:list'),

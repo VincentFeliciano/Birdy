@@ -3,6 +3,8 @@
   import FdmPanel from './FdmPanel.svelte'
   import ResinPanel from './ResinPanel.svelte'
   import { initResin, resin, setMode } from './resin.svelte'
+  import PrinterManager from './PrinterManager.svelte'
+  import { sl } from './store.svelte'
 
   onMount(initResin)
 </script>
@@ -13,7 +15,7 @@
 </div>
 
 {#if resin.mode === 'resin'}
-  <ResinPanel />
+  {#if sl.managePrinters}<PrinterManager />{:else}<ResinPanel />{/if}
 {:else}
   <FdmPanel />
 {/if}

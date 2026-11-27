@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
+  import { sl } from './store.svelte'
   import Icon from '../../components/Icon.svelte'
   import PricesEditor from '../../components/PricesEditor.svelte'
   import { fmtMoney, prices, printCost } from '../../app/costs.svelte'
@@ -15,6 +17,8 @@
     resin,
     resinPrinter,
     saveResin,
+    sendResin,
+    chooseSendTo,
     setCustom,
     setSetting,
     showLayer,
@@ -22,6 +26,11 @@
   } from './resin.svelte'
 
   const printer = $derived(resinPrinter())
+  onMount(() => {
+    void window.api.printers.list().then((p) => (sl.printers = p))
+  })
+  const wifi = $derived(sl.printers.filter((p) => p.kind === 'elegoo'))
+  const sendTo = $derived(wifi.find((p) => p.id === resin.sendTo) ?? wifi[0])
   const s = $derived(resin.settings)
   const r = $derived(resin.result)
   const pxUm = $derived(`${((printer.sizeX / printer.resX) * 1000).toFixed(0)} × ${((printer.sizeY / printer.resY) * 1000).toFixed(0)} µm`)
@@ -174,6 +183,34 @@
         </p>
       {/if}
       {#if resin.saveError}<p class="err">{resin.saveError}</p>{/if}
+
+      <div class="send">
+        <h3 class="hud-label row-head">
+          Send over Wi-Fi
+          <button class="link" onclick={() => (sl.managePrinters = true)}>{wifi.length ? 'Printers' : 'Add printer'}</button>
+        </h3>
+        {#if wifi.length && sendTo}
+          {#if wifi.length > 1}
+            <label class="field">
+              <span>Send to</span>
+              <select value={sendTo.id} onchange={(e) => chooseSendTo(e.currentTarget.value)}>
+                {#each wifi as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+              </select>
+            </label>
+          {/if}
+          <label class="check">
+            <input type="checkbox" checked={resin.startPrint} onchange={(e) => (resin.startPrint = e.currentTarget.checked)} />
+            Start printing when it arrives
+          </label>
+          <button class="ghost wide" disabled={resin.sending} onclick={() => sendResin(sendTo.id, sendTo.name)}>
+            {#if resin.sending}<span class="spinner"></span>Sending…{:else}<Icon name="send" size={14} />Send to {sendTo.name}{/if}
+          </button>
+          {#if resin.sendResult}<p class={resin.sendResult.ok ? 'ok' : 'err'}>{resin.sendResult.detail}</p>{/if}
+          {#if resin.startPrint}<p class="hint small">Check the vat has resin and the plate is clean before it starts.</p>{/if}
+        {:else}
+          <p class="hint small">Elegoo printers on your network (Saturn 4 / Mars 5 series) can take the file straight from here. Add one with its address from the printer’s screen.</p>
+        {/if}
+      </div>
     </section>
   {/if}
 
@@ -193,6 +230,19 @@
 </footer>
 
 <style>
+  .send {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
   .scroll {
     flex: 1;
     min-height: 0;

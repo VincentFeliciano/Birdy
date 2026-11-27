@@ -112,7 +112,10 @@ export interface ImportResult {
   error?: string
 }
 
-export type PrinterKind = 'octoprint' | 'moonraker' | 'prusalink' | 'serial'
+export type PrinterKind = 'octoprint' | 'moonraker' | 'prusalink' | 'serial' | 'elegoo'
+
+/** Printers that take G-code (the rest are resin printers). */
+export const isFdmKind = (k: PrinterKind) => k !== 'elegoo'
 
 /** A printer as the UI sees it. Secrets never leave the main process. */
 export interface PrinterInfo {

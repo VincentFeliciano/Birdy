@@ -4,6 +4,7 @@ import { digestHeader } from './digest'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { sdcpStart, sdcpStatus, sdcpTest, sdcpUpload } from './sdcp'
 import type { PrinterInfo, PrinterInput, PrinterKind, PrinterState, PrinterStatus, PrinterTestResult, SendResult } from '../src/types/slicing'
 
 /**
@@ -21,7 +22,7 @@ interface Stored {
   secret?: string
 }
 
-const KINDS: PrinterKind[] = ['octoprint', 'moonraker', 'prusalink', 'serial']
+const KINDS: PrinterKind[] = ['octoprint', 'moonraker', 'prusalink', 'serial', 'elegoo']
 const file = () => join(app.getPath('userData'), 'printers.json')
 const TIMEOUT_MS = 8000
 const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000
@@ -107,6 +108,7 @@ function find(id: string): Stored {
 export async function testPrinter(id: string): Promise<PrinterTestResult> {
   try {
     const p = find(id)
+    if (p.kind === 'elegoo') return { ok: true, detail: await sdcpTest(p.url!) }
     if (p.kind === 'octoprint') {
       const j = (await call(p, 'GET', '/api/version')) as { text?: string; server?: string }
       return { ok: true, detail: `Connected to ${j.text ?? `OctoPrint ${j.server ?? ''}`}`.trim() }
@@ -126,6 +128,7 @@ export async function testPrinter(id: string): Promise<PrinterTestResult> {
 export async function sendToPrinter(id: string, gcodePath: string, start: boolean): Promise<SendResult> {
   try {
     const p = find(id)
+    if (p.kind === 'elegoo') throw new Error(`${p.name} is a resin printer. Switch Slice to Resin and send the .goo file from there.`)
     const data = await readFile(gcodePath)
     const name = basename(gcodePath).replace(/[^\w.\- ]+/g, '_')
     if (p.kind === 'octoprint') {
@@ -175,6 +178,7 @@ export async function printerStatus(id: string): Promise<PrinterStatus> {
     return offline((err as Error).message)
   }
   try {
+    if (p.kind === 'elegoo') return await sdcpStatus(p.url!)
     if (p.kind === 'octoprint') {
       const job = (await call(p, 'GET', '/api/job', undefined, STATUS_TIMEOUT_MS)) as {
         state?: string
@@ -272,6 +276,20 @@ export async function printerStatus(id: string): Promise<PrinterStatus> {
     }
   } catch (err) {
     return offline((err as Error).message)
+  }
+}
+
+/** Uploads a sliced resin file to an Elegoo printer over Wi-Fi and, if asked, starts it. */
+export async function sendResinToPrinter(id: string, name: string, data: Buffer, start: boolean): Promise<SendResult> {
+  try {
+    const p = find(id)
+    if (p.kind !== 'elegoo') throw new Error(`${p.name} takes G-code, not resin files.`)
+    const file = name.replace(/[^\w.\- ]+/g, '_').slice(0, 100) || 'print.goo'
+    await sdcpUpload(p.url!, data, file, UPLOAD_TIMEOUT_MS)
+    if (start) await sdcpStart(p.url!, file)
+    return { ok: true, detail: start ? `Sent ${file} to ${p.name} and started the print.` : `Uploaded ${file} to ${p.name}. Start it from the printer’s screen.` }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
   }
 }
 

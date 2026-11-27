@@ -69,10 +69,12 @@
           <div class="big"><span style="width: {s.progress * 100}%"></span></div>
           <div class="d mono">{Math.round(s.progress * 100)}% · {fmtTime(s.elapsed)} printed · {fmtTime(s.remaining)} to go</div>
         {/if}
-        {#if s && s.state !== 'offline'}
+        {#if s && s.state !== 'offline' && (s.hotend !== null || s.bed !== null)}
           <div class="d mono">Nozzle {fmtTemp(s.hotend, s.hotendTarget)} · Bed {fmtTemp(s.bed, s.bedTarget)}</div>
         {/if}
-        <button class="link" onclick={() => openWebPage(open.url)}><Icon name="external" size={12} />Open the printer's web page</button>
+        {#if open.kind !== 'elegoo'}
+          <button class="link" onclick={() => openWebPage(open.url)}><Icon name="external" size={12} />Open the printer's web page</button>
+        {/if}
       </div>
     </div>
   {/if}

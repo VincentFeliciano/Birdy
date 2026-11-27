@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte'
   import Icon from '../../components/Icon.svelte'
   import { fmtBytes } from '../../app/format'
+  import { isFdmKind } from '../../types/slicing'
   import type { PresetRef, SupportMode } from '../../types/slicing'
   import { fitsMachine } from '../../../electron/slicing/presets'
   import PrinterManager from './PrinterManager.svelte'
@@ -63,7 +64,8 @@
   const fils = $derived(options(catalog?.filaments, sl.settings.filament))
 
   const foundSources = $derived(sl.candidates.filter((c) => c.found))
-  const printer = $derived(sl.printers.find((p) => p.id === sl.printerId) ?? sl.printers[0])
+  const fdmPrinters = $derived(sl.printers.filter((p) => isFdmKind(p.kind)))
+  const printer = $derived(fdmPrinters.find((p) => p.id === sl.printerId) ?? fdmPrinters[0])
   const elapsed = $derived(sl.slicing ? Math.max(0, Math.round((now - sl.sliceStarted) / 1000)) : 0)
   const hasOverrides = $derived(Object.keys(o).length > 0)
 
@@ -74,7 +76,7 @@
   const pct = (n: number) => `${Math.round(n * 100)}%`
   const fmtTime = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`)
   const usbPct = $derived(usb.total ? usb.sent / usb.total : 0)
-  const kindLabel = { octoprint: 'OctoPrint', moonraker: 'Klipper / Moonraker', prusalink: 'PrusaLink', serial: 'USB cable' } as const
+  const kindLabel = { octoprint: 'OctoPrint', moonraker: 'Klipper / Moonraker', prusalink: 'PrusaLink', serial: 'USB cable', elegoo: 'Elegoo Wi-Fi' } as const
 </script>
 
 {#if sl.managePrinters}
@@ -286,13 +288,13 @@
         <section>
           <h3 class="hud-label row-head">
             Print
-            <button class="link" onclick={() => (sl.managePrinters = true)}>{sl.printers.length ? 'Printers' : 'Add printer'}</button>
+            <button class="link" onclick={() => (sl.managePrinters = true)}>{fdmPrinters.length ? 'Printers' : 'Add printer'}</button>
           </h3>
-          {#if sl.printers.length}
+          {#if fdmPrinters.length}
             <label class="field">
               <span>Send to</span>
               <select value={printer?.id ?? ''} onchange={(e) => choosePrinter(e.currentTarget.value)}>
-                {#each sl.printers as p}<option value={p.id}>{p.name} · {kindLabel[p.kind]}</option>{/each}
+                {#each fdmPrinters as p}<option value={p.id}>{p.name} · {kindLabel[p.kind]}</option>{/each}
               </select>
             </label>
             {#if printer?.kind !== 'serial'}

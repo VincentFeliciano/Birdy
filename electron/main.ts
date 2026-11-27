@@ -16,7 +16,7 @@ import { PrintHistory } from './history'
 import { assertTrusted, isId, isRect, isShortString, setTrustedUi } from './security'
 import { SlicingEngine } from './slicing/engine'
 import { importCandidates, importSettings } from './slicing/import'
-import { listPrinters, removePrinter, savePrinter, sendToPrinter, testPrinter, printerStatus, printerSnapshot } from './printers'
+import { listPrinters, removePrinter, savePrinter, sendToPrinter, testPrinter, printerStatus, printerSnapshot, sendResinToPrinter } from './printers'
 import type { ImportSource, PrinterInput, SendRequest, SerialPortChoice, SliceRequest } from '../src/types/slicing'
 
 app.setName('Birdy')
@@ -279,6 +279,15 @@ function registerIpc(exportsDir: string) {
   handle('printers:save', async (p) => savePrinter(p as PrinterInput))
   handle('printers:remove', async (id) => removePrinter(String(id)))
   handle('printers:test', async (id) => testPrinter(String(id)))
+  handle('resin:send', async (req) => {
+    const r = req as { printerId?: unknown; name?: unknown; parts?: unknown; start?: unknown }
+    if (!isShortString(r?.printerId, 100) || !isShortString(r?.name, 200) || !Array.isArray(r.parts) || !r.parts.every((x) => x instanceof Uint8Array)) {
+      return { ok: false, detail: 'Nothing to send.' }
+    }
+    const total = (r.parts as Uint8Array[]).reduce((n, x) => n + x.byteLength, 0)
+    if (!total || total > 1024 * 1024 * 1024) return { ok: false, detail: 'The file is empty or too large.' }
+    return sendResinToPrinter(r.printerId, r.name, Buffer.concat(r.parts as Uint8Array[]), r.start === true)
+  })
   handle('printers:status', async (id) => printerStatus(String(id)))
   handle('printers:snapshot', async (id) => printerSnapshot(String(id)))
   handle('printers:send', async (req) => {
