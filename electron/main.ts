@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { isSearchType, type NewBookmark, type NewLibraryModel, type SaveRequest, type SlicerHandoff } from '../src/types/ipc'
 import { BrowserManager } from './browser-manager'
 import { installSignInHeaders } from './user-agent'
+import { checkForUpdates, downloadUpdate, getUpdateState, installUpdate, setupUpdater } from './updater'
 import { Library } from './library'
 import { chooseSlicer, listSlicers, openInSlicer, setDefaultSlicer } from './slicer-launcher'
 import { DownloadManager } from './download-manager'
@@ -118,6 +119,7 @@ function createWindow() {
   library = new Library(dirs.library, (d) => win?.webContents.send('library:changed', d))
   engine = new SlicingEngine((st) => win?.webContents.send('engine:state', st))
   setupSerial(win)
+  setupUpdater(win)
   registerIpc(dirs.exports)
 
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -195,6 +197,10 @@ function registerIpc(exportsDir: string) {
 
   handle('slicer:list', async () => listSlicers())
   handle('slicer:choose', async () => (win ? chooseSlicer(win) : listSlicers()))
+  handle('update:get', async () => getUpdateState())
+  handle('update:check', async () => checkForUpdates())
+  handle('update:download', async () => downloadUpdate())
+  on('update:install', () => installUpdate())
   on('theme:accent', (hex) => typeof hex === 'string' && /^#[0-9a-f]{6}$/i.test(hex) && browser?.setStartPageAccent(hex))
   on('slicer:set-default', (id) => isShortString(id, 100) && setDefaultSlicer(id))
   handle('slicer:open', async (req) => openInSlicer(req as SlicerHandoff, exportsDir))
@@ -283,6 +289,15 @@ function maybeScreenshot() {
     setTimeout(async () => {
       if (!win) return
       const view = process.argv.find((a) => a.startsWith('--view='))?.slice(7)
+      if (process.argv.includes('--demo-update')) {
+        await new Promise((r) => setTimeout(r, 1500))
+        const checked = await checkForUpdates()
+        console.log(`[update] check: ${checked.status} ${checked.version ?? ''} ${checked.error ?? ''}`)
+        if (checked.status === 'available') {
+          const done = await downloadUpdate()
+          console.log(`[update] download: ${done.status} ${done.version ?? ''} ${done.error ?? ''}`)
+        }
+      }
       const accent = process.argv.find((a) => a.startsWith('--theme='))?.slice('--theme='.length)
       if (accent) {
         await win.webContents.executeJavaScript(`window.__setTheme?.(${JSON.stringify(accent)}, true)`)

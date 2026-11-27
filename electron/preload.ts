@@ -56,6 +56,13 @@ const api: Api = {
     renameGroup: (from, to) => ipcRenderer.send('library:rename-group', from, to),
     deleteGroup: (name) => ipcRenderer.send('library:delete-group', name),
   },
+  updates: {
+    get: () => ipcRenderer.invoke('update:get'),
+    onState: (cb) => on('update:state', cb),
+    check: () => ipcRenderer.invoke('update:check'),
+    download: () => ipcRenderer.invoke('update:download'),
+    install: () => ipcRenderer.send('update:install'),
+  },
   theme: {
     setAccent: (hex) => ipcRenderer.send('theme:accent', hex),
   },

@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte'
   import Logo from '../../components/Logo.svelte'
+  import { checkNow, updates } from '../../app/updates.svelte'
   import { library } from '../../stores/library.svelte'
   import { openFromLibrary, ws } from '../workspace/store.svelte'
   import { fmtBytes } from '../../app/format'
@@ -78,6 +79,19 @@
     { name: 'Electron', license: 'MIT', url: 'https://github.com/electron/electron', note: 'Desktop shell and Chromium browser engine.' },
     { name: 'Svelte', license: 'MIT', url: 'https://github.com/sveltejs/svelte', note: 'User interface framework.' },
   ]
+
+  const updateLine = $derived.by(() => {
+    const u = updates.state
+    if (!u) return ''
+    if (u.status === 'checking') return 'Checking…'
+    if (u.status === 'none') return 'Up to date'
+    if (u.status === 'available') return `${u.version} available`
+    if (u.status === 'downloading') return `Downloading ${u.version}…`
+    if (u.status === 'ready') return `${u.version} ready, restart to install`
+    if (u.status === 'error') return u.error ?? 'Update check failed'
+    if (u.status === 'unsupported') return u.error ?? ''
+    return ''
+  })
 </script>
 
 <div class="lib neon-panel">
@@ -204,6 +218,14 @@
         <div class="about">
           <div class="about-logo"><Logo size={72} glow={2} /></div>
           <h3>Birdy</h3>
+          <div class="version">
+            <span class="mono">Version {updates.state?.current ?? ''}</span>
+            <span class="ustatus">{updateLine}</span>
+            <button
+              class="ghost"
+              disabled={updates.state?.status === 'checking' || updates.state?.status === 'downloading' || updates.state?.status === 'unsupported'}
+              onclick={checkNow}><Icon name="reload" size={13} />Check for updates</button>
+          </div>
           <p>A browser that turns into a 3D-printing workspace. Find a model, check it, fix it, slice it, and send it to your printer without switching apps.</p>
           <p class="dim">
             Free software under the GNU AGPL v3.0.
@@ -546,6 +568,17 @@
   .about {
     max-width: 640px;
     padding: 8px 4px;
+  }
+  .version {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin: 0 0 12px;
+    font-size: 12px;
+  }
+  .ustatus {
+    color: var(--muted);
   }
   .about-logo {
     padding: 8px 0 4px 6px;

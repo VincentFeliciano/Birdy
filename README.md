@@ -12,6 +12,10 @@ the whole app, the logo included: mustard yellow by default, seven other presets
 Download `Birdy-Setup-x.y.z.exe` from [Releases](../../releases) and run it.
 The installer is not code-signed yet, so Windows SmartScreen may ask you to confirm (More info → Run anyway).
 
+**Updates**: Birdy checks its GitHub releases shortly after it starts and every few hours. When a new
+version is out, a strip at the bottom offers it; download it, then *Restart and update*. You can also
+check from Library → About. Updates are verified against their SHA-512 before they run.
+
 ## What it does
 
 **Browser**
@@ -57,7 +61,7 @@ npm install
 npm run dev        # run with hot reload
 npm run check      # type-check renderer and main process
 npm test           # print-check, repair, slicing, USB and user-agent tests
-npm run dist       # build the Windows installer into release/
+npm run dist       # build the Windows installer into release/ (never publishes)
 ```
 
 Stack: Electron, Svelte 5, TypeScript, Vite (electron-vite) and Three.js.
@@ -68,6 +72,9 @@ src/        app UI: browser chrome, workspace, model editor, library, 3D engine
 resources/  bundled start page
 tests/      print-check tests
 ```
+
+Releasing: attach `Birdy-Setup-x.y.z.exe`, its `.blockmap` and `latest.yml` from `release/` to the GitHub
+release. The in-app updater reads `latest.yml`.
 
 Security: websites run in sandboxed views with no Node access and no preload. The app UI talks to the
 main process only through a small, typed, sender-checked IPC surface. Downloaded files are never executed.

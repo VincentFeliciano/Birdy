@@ -12,6 +12,8 @@
   import { installDemo } from './demo.svelte'
   import { applyAccent, theme } from './theme.svelte'
   import ThemePanel from './ThemePanel.svelte'
+  import UpdatePanel from './UpdatePanel.svelte'
+  import { initUpdates, stripVisible } from './updates.svelte'
 
   let dragging = $state(false)
   let mainEl: HTMLElement
@@ -30,6 +32,7 @@
     })
     installDemo()
     applyAccent(theme.accent)
+    void initUpdates()
     return () => {
       offStores()
       offLibrary()
@@ -94,6 +97,9 @@
       </main>
       {#if downloads.open && downloads.items.length}
         <DownloadsPanel />
+      {/if}
+      {#if stripVisible()}
+        <UpdatePanel />
       {/if}
       {#if theme.panelOpen}
         <ThemePanel onclose={() => (theme.panelOpen = false)} />

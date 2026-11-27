@@ -185,6 +185,22 @@ export type AppShortcut = 'focus-address' | 'toggle-workspace' | 'open-model'
 
 export type Unsubscribe = () => void
 
+export type UpdateStatus = 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error' | 'unsupported'
+
+export interface UpdateState {
+  status: UpdateStatus
+  /** Installed version. */
+  current: string
+  /** Version on offer (available, downloading, ready). */
+  version?: string
+  notes?: string
+  /** 0..1 while downloading. */
+  progress?: number
+  bytesPerSecond?: number
+  checkedAt?: number
+  error?: string
+}
+
 export interface Api {
   tabs: {
     create(url?: string): void
@@ -230,6 +246,14 @@ export interface Api {
     createGroup(name: string): void
     renameGroup(from: string, to: string): void
     deleteGroup(name: string): void
+  }
+  updates: {
+    get(): Promise<UpdateState>
+    onState(cb: (s: UpdateState) => void): Unsubscribe
+    check(): Promise<UpdateState>
+    download(): Promise<UpdateState>
+    /** Quits Birdy, installs the downloaded update and starts it again. */
+    install(): void
   }
   theme: {
     /** Restyles the new-tab page with the neon colour (#RRGGBB). */

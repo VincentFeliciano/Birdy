@@ -1,7 +1,7 @@
 {
   "name": "birdy",
   "productName": "Birdy",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "A desktop web browser that becomes a 3D printing workspace when you open a model.",
   "main": "./out/main/index.js",
   "private": true,
@@ -11,7 +11,7 @@
     "start": "electron-vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json && tsc -p tsconfig.node.json --noEmit",
     "icon": "electron scripts/make-icon.cjs",
-    "dist": "electron-vite build && electron-builder --win nsis --x64",
+    "dist": "electron-vite build && electron-builder --win nsis --x64 --publish never",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/printCheck.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/slicing.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/serial.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/user-agent.test.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/repair.test.mts"
   },
   "devDependencies": {
@@ -21,6 +21,7 @@
     "@types/three": "^0.187.0",
     "electron": "^45.5.0",
     "electron-builder": "^26.18.0",
+    "electron-updater": "^6.8.11",
     "electron-vite": "^6.0.0",
     "svelte": "^5.59.2",
     "svelte-check": "^4.7.8",
@@ -62,8 +63,17 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Birdy",
       "uninstallDisplayName": "Birdy",
-      "packElevateHelper": false
-    }
+      "packElevateHelper": false,
+      "include": "build/installer.nsh"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "VincentFeliciano",
+        "repo": "Birdy",
+        "releaseType": "prerelease"
+      }
+    ]
   },
   "license": "AGPL-3.0-only"
 }
