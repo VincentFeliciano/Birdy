@@ -16,7 +16,7 @@ import { PrintHistory } from './history'
 import { assertTrusted, isId, isRect, isShortString, setTrustedUi } from './security'
 import { SlicingEngine } from './slicing/engine'
 import { importCandidates, importSettings } from './slicing/import'
-import { listPrinters, removePrinter, savePrinter, sendToPrinter, testPrinter } from './printers'
+import { listPrinters, removePrinter, savePrinter, sendToPrinter, testPrinter, printerStatus, printerSnapshot } from './printers'
 import type { ImportSource, PrinterInput, SendRequest, SerialPortChoice, SliceRequest } from '../src/types/slicing'
 
 app.setName('Birdy')
@@ -259,6 +259,8 @@ function registerIpc(exportsDir: string) {
   handle('printers:save', async (p) => savePrinter(p as PrinterInput))
   handle('printers:remove', async (id) => removePrinter(String(id)))
   handle('printers:test', async (id) => testPrinter(String(id)))
+  handle('printers:status', async (id) => printerStatus(String(id)))
+  handle('printers:snapshot', async (id) => printerSnapshot(String(id)))
   handle('printers:send', async (req) => {
     const r = req as SendRequest
     if (!r || typeof r.printerId !== 'string' || typeof r.jobId !== 'string') throw new Error('Incomplete request.')
@@ -312,6 +314,8 @@ function maybeScreenshot() {
       if (process.argv.includes('--demo-install')) await win.webContents.executeJavaScript('window.__demoInstall = true')
       const historyDemo = process.argv.find((a) => a.startsWith('--demo-history='))?.slice('--demo-history='.length)
       if (historyDemo) await win.webContents.executeJavaScript(`window.__demoHistory = ${JSON.stringify(historyDemo)}`)
+      const barDemo = process.argv.find((a) => a.startsWith('--demo-bar='))?.slice('--demo-bar='.length)
+      if (barDemo) await win.webContents.executeJavaScript(`window.__demoBar = ${JSON.stringify(barDemo)}`)
       if (process.argv.includes('--demo-orient')) await win.webContents.executeJavaScript('window.__demoOrient = true')
       const plateDemo = process.argv.find((a) => a.startsWith('--demo-plate='))?.slice('--demo-plate='.length)
       if (plateDemo) await win.webContents.executeJavaScript(`window.__demoPlate = ${JSON.stringify(plateDemo)}`)

@@ -2,6 +2,7 @@
   import Icon from '../../components/Icon.svelte'
   import type { PrinterInfo, PrinterKind, PrinterTestResult } from '../../types/slicing'
   import { sl } from './store.svelte'
+  import { bar, refreshPrinters, setBarHidden } from '../printers/status.svelte'
 
   const kinds: { id: PrinterKind; label: string; hint: string }[] = [
     { id: 'octoprint', label: 'OctoPrint', hint: 'Address of your OctoPrint (e.g. octopi.local) and an API key from its Settings → Application Keys.' },
@@ -81,6 +82,18 @@
       <button class="icon-btn mini" aria-label="Back to slicing" title="Back" onclick={() => (sl.managePrinters = false)}><Icon name="back" size={14} /></button>
       Printers
     </h3>
+    {#if sl.printers.some((p) => p.kind !== 'serial')}
+      <label class="barToggle">
+        <input
+          type="checkbox"
+          checked={!bar.hidden}
+          onchange={(e) => {
+            setBarHidden(!e.currentTarget.checked)
+            refreshPrinters()
+          }} />
+        Show live status of network printers at the bottom of the window
+      </label>
+    {/if}
 
     {#if !editing}
       {#if sl.printers.length}
@@ -164,6 +177,15 @@
 </div>
 
 <style>
+  .barToggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 10px;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+  }
   .scroll {
     flex: 1;
     min-height: 0;

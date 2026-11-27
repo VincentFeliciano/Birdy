@@ -3,6 +3,7 @@ import { importDownloads as importModelsFromDownloads, models as modelsState, op
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
 import { printCost } from './costs.svelte'
+import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
 import { arrangePlate, autoOrient, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, makeExposureTest, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
@@ -93,6 +94,27 @@ export function installDemo() {
         await checkNow()
         console.log(`repair direct: ${issueList()} note=${ws.fixNote}`)
       }
+      return
+    }
+    const barPort = Number((window as unknown as { __demoBar?: string }).__demoBar)
+    if (barPort) {
+      // Live status from the local mock printers (tests/mock-printers.mjs).
+      await openSample()
+      ws.layout = 'workspace'
+      const api = window.api.printers
+      for (const p of await api.list()) await api.remove(p.id)
+      await api.save({ name: 'Prusa MK4', kind: 'prusalink', url: `http://127.0.0.1:${barPort + 2}/`, username: 'maker', secret: 'prusa-test-pass' })
+      await api.save({ name: 'Voron 2.4', kind: 'moonraker', url: `http://127.0.0.1:${barPort + 1}`, secret: 'moon-test-key' })
+      const list = await api.save({ name: 'Ender 3 (OctoPi)', kind: 'octoprint', url: `127.0.0.1:${barPort}`, secret: 'octo-test-key' })
+      await api.save({ name: 'Garage printer', kind: 'octoprint', url: `127.0.0.1:${barPort + 9}`, secret: 'x' })
+      setBarHidden(false)
+      refreshPrinters()
+      await until(() => Object.keys(bar.status).length >= 4, 15_000)
+      const octo = list.find((p) => p.kind === 'octoprint')!
+      togglePrinter(octo.id)
+      await until(() => !!bar.snapshots[octo.id], 15_000)
+      for (const [id, s] of Object.entries(bar.status)) console.log(`bar ${bar.printers.find((p) => p.id === id)?.name}: ${s.state} ${s.detail} p=${s.progress} left=${s.remaining} noz=${s.hotend}/${s.hotendTarget} bed=${s.bed} cam=${s.camera}`)
+      console.log(`bar snapshot bytes=${bar.snapshots[octo.id]?.length}`)
       return
     }
     if ((window as unknown as { __demoHistory?: boolean }).__demoHistory) {

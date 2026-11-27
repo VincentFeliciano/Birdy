@@ -204,6 +204,7 @@ import type {
   SliceRequest,
   SliceResult,
   SliceSaveResult,
+  PrinterStatus,
 } from './slicing'
 
 export type AppShortcut = 'focus-address' | 'toggle-workspace' | 'open-model'
@@ -359,6 +360,9 @@ export interface Api {
     remove(id: string): Promise<PrinterInfo[]>
     test(id: string): Promise<PrinterTestResult>
     send(req: SendRequest): Promise<SendResult>
+    status(id: string): Promise<PrinterStatus>
+    /** A webcam still as a data URL, or null when there is none. */
+    snapshot(id: string): Promise<string | null>
     /** Main asks the UI which serial port to use when the page calls navigator.serial.requestPort(). */
     onChoosePort(cb: (ports: SerialPortChoice[]) => void): Unsubscribe
     choosePort(portId: string | null): void

@@ -16,6 +16,8 @@
   import ModelsPanel from '../features/models/ModelsPanel.svelte'
   import { initModels, models } from '../features/models/store.svelte'
   import UpdatePanel from './UpdatePanel.svelte'
+  import PrinterBar from '../features/printers/PrinterBar.svelte'
+  import { bar, initPrinterBar, networkPrinters } from '../features/printers/status.svelte'
   import { initUpdates, stripVisible } from './updates.svelte'
 
   let dragging = $state(false)
@@ -38,8 +40,10 @@
     void initUpdates()
     const offModels = initModels()
     const offHistory = initHistory()
+    const offPrinters = initPrinterBar()
     return () => {
       offHistory()
+      offPrinters()
       offStores()
       offLibrary()
       offModel()
@@ -107,6 +111,9 @@
       {/if}
       {#if downloads.open && downloads.items.length}
         <DownloadsPanel />
+      {/if}
+      {#if !bar.hidden && networkPrinters().length}
+        <PrinterBar />
       {/if}
       {#if stripVisible()}
         <UpdatePanel />

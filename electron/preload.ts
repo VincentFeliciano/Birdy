@@ -113,6 +113,8 @@ const api: Api = {
     remove: (id) => ipcRenderer.invoke('printers:remove', id),
     test: (id) => ipcRenderer.invoke('printers:test', id),
     send: (req) => ipcRenderer.invoke('printers:send', req),
+    status: (id) => ipcRenderer.invoke('printers:status', id),
+    snapshot: (id) => ipcRenderer.invoke('printers:snapshot', id),
     onChoosePort: (cb) => on('serial:choose', cb),
     choosePort: (portId) => ipcRenderer.send('serial:chosen', portId),
   },

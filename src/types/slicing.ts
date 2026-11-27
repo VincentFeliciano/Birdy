@@ -148,6 +148,27 @@ export interface SendRequest {
   startPrint: boolean
 }
 
+export type PrinterState = 'idle' | 'printing' | 'paused' | 'done' | 'error' | 'offline'
+
+/** What a network printer is doing right now. */
+export interface PrinterStatus {
+  state: PrinterState
+  /** Plain words from the printer, e.g. "Operational" or an error. */
+  detail: string
+  file: string | null
+  /** 0..1 */
+  progress: number | null
+  /** Seconds printed so far and estimated to go. */
+  elapsed: number | null
+  remaining: number | null
+  hotend: number | null
+  hotendTarget: number | null
+  bed: number | null
+  bedTarget: number | null
+  /** The printer has a webcam Birdy knows how to take a snapshot from. */
+  camera: boolean
+}
+
 export interface SendResult {
   ok: boolean
   detail: string
