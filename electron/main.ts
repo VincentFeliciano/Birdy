@@ -352,6 +352,8 @@ function maybeScreenshot() {
       if (process.argv.includes('--demo-orient')) await win.webContents.executeJavaScript('window.__demoOrient = true')
       if (process.argv.includes('--demo-settle')) await win.webContents.executeJavaScript('window.__demoSettle = true')
       if (process.argv.includes('--demo-formats')) await win.webContents.executeJavaScript('window.__demoFormats = true')
+      const editDemo = process.argv.find((a) => a.startsWith('--demo-edit='))?.slice('--demo-edit='.length)
+      if (editDemo) await win.webContents.executeJavaScript(`window.__demoEdit = ${JSON.stringify(editDemo)}`)
       const healthDemo = process.argv.find((a) => a.startsWith('--demo-health='))?.slice('--demo-health='.length)
       if (healthDemo) await win.webContents.executeJavaScript(`window.__demoHealth = ${JSON.stringify(healthDemo)}`)
       const plateDemo = process.argv.find((a) => a.startsWith('--demo-plate='))?.slice('--demo-plate='.length)

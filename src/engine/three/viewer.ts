@@ -598,6 +598,40 @@ export class Viewer {
    * Shows only `part` of the model (null shows them all). The others move to a layer the camera
    * does not draw, so they stay in the scene for saving and checking, and can't be clicked.
    */
+  private cutPlane: THREE.Group | null = null
+  /** Shows a see-through plane across `axis` at `at` mm, sized to the selected part (null hides it). */
+  setCutPlane(axis: 'x' | 'y' | 'z' | null, at: number) {
+    if (this.cutPlane) {
+      this.scene.remove(this.cutPlane)
+      this.cutPlane.traverse((o) => {
+        const m = o as THREE.Mesh
+        m.geometry?.dispose()
+        ;(m.material as THREE.Material | undefined)?.dispose()
+      })
+      this.cutPlane = null
+    }
+    const target = this.target ?? this.model
+    if (!axis || !target || !Number.isFinite(at)) return this.changed()
+    const box = new THREE.Box3().setFromObject(target, true)
+    const size = box.getSize(new THREE.Vector3()).multiplyScalar(1.25).addScalar(6)
+    const c = box.getCenter(new THREE.Vector3())
+    const w = axis === 'x' ? size.y : size.x
+    const h = axis === 'z' ? size.y : size.z
+    const geo = new THREE.PlaneGeometry(w, h)
+    if (axis === 'x') geo.rotateY(Math.PI / 2)
+    else if (axis === 'y') geo.rotateX(Math.PI / 2)
+    const g = new THREE.Group()
+    const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: this.accent, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }))
+    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: this.accent.clone().multiplyScalar(1.6), toneMapped: false }))
+    g.add(fill, edge)
+    g.position.copy(c)
+    g.position[axis] = at
+    g.renderOrder = 20
+    this.cutPlane = g
+    this.scene.add(g)
+    this.changed()
+  }
+
   setIsolated(part: THREE.Object3D | null) {
     if (!this.model) return
     for (const child of this.model.children) {

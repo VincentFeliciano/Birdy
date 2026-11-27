@@ -8,7 +8,7 @@ import { isFdmKind } from '../types/slicing'
 import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelte'
 import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
-import { arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
+import { splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
@@ -248,6 +248,42 @@ export function installDemo() {
         await new Promise((res) => setTimeout(res, 300))
         ;[...document.querySelectorAll<HTMLButtonElement>('[role=tab]')].find((t) => t.textContent?.includes('Print history'))?.click()
       }
+      return
+    }
+    const editDemo = (window as unknown as { __demoEdit?: string }).__demoEdit
+    if (editDemo) {
+      // A box and a sphere overlapping, as two parts, then one geometry edit.
+      const group = new THREE.Group()
+      if (editDemo.startsWith('fit')) group.add(new THREE.Mesh(new THREE.TorusKnotGeometry(110, 32, 200, 24).translate(0, 0, 150)))
+      else {
+        group.add(new THREE.Mesh(new THREE.BoxGeometry(30, 30, 30).translate(0, 0, 15)))
+        group.add(new THREE.Mesh(new THREE.SphereGeometry(14, 48, 32).translate(15, 0, 30)))
+      }
+      const data = exportModel(group, '3mf')
+      await openModelFile({ name: 'edit-test.3mf', format: '3mf', size: data.byteLength, data })
+      ws.layout = 'workspace'
+      ws.sidebarTab = 'transform'
+      await until(() => !!ws.report && !ws.checking)
+      const say = (what: string) => console.log(`edit ${what}: parts=${ws.parts.length} tris=${ws.parts.map((p) => p.triangles).join('+')} verdict=${ws.report?.verdict} issues=${ws.report?.issues.map((i) => i.code).join(',')} note=${ws.fixNote} error=${ws.error}`)
+      say('start')
+      const t0 = performance.now()
+      if (editDemo === 'merge') await combineParts('union')
+      if (editDemo === 'subtract') { selectPart(1); await combineParts('difference') }
+      if (editDemo === 'overlap') { selectPart(1); await combineParts('intersect') }
+      if (editDemo === 'cut') { selectPart(0); await cutPart('z', 12, 'both') }
+      if (editDemo === 'simplify') { await combineParts('union'); await simplifyPart(0.25) }
+      if (editDemo === 'smooth') { await combineParts('union'); await smoothPart(10) }
+      if (editDemo === 'rebuild') { selectPart(0); await rebuildPart(0.5) }
+      if (editDemo === 'fit') await splitToFit({ mode: 'smart', joiner: 'pegs', diameter: 5, clearance: 0.2 })
+      if (editDemo === 'fit-grid') await splitToFit({ mode: 'grid', joiner: 'dowels', diameter: 5, clearance: 0.2 })
+      if (editDemo === 'hollow') { await combineParts('union'); await hollowPart(2) }
+      await until(() => !ws.working)
+      await new Promise((r) => setTimeout(r, 1200))
+      await until(() => !!ws.report && !ws.checking)
+      say(`${editDemo} (${Math.round(performance.now() - t0)} ms)`)
+      if (editDemo === 'undo') { await combineParts('union'); undoEdit(); await until(() => !!ws.report && !ws.checking); say('undo') }
+      await new Promise((r) => setTimeout(r, 500))
+      document.querySelector('.modify')?.scrollIntoView({ block: 'end' })
       return
     }
     const healthDemo = (window as unknown as { __demoHealth?: string }).__demoHealth

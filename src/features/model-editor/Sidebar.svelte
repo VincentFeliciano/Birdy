@@ -6,6 +6,7 @@
   import NumField from '../../components/NumField.svelte'
   import SlicePanel from '../slicing/SlicePanel.svelte'
   import PlatePanel from './PlatePanel.svelte'
+  import ModifyPanel from './ModifyPanel.svelte'
   import { setOverride, sl } from '../slicing/store.svelte'
   import type { Issue } from '../../engine/geometry/printCheck'
   import { MARK_STYLE } from '../../engine/three/viewer'
@@ -318,6 +319,7 @@
           </div>
           {#if ws.fixNote}<p class="hint">{ws.fixNote}</p>{/if}
         </section>
+        <ModifyPanel />
       {/if}
     </div>
 

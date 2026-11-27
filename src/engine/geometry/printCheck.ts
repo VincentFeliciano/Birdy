@@ -336,8 +336,36 @@ export function checkPrintability(input: CheckInput): PrintReport {
   const components = usedRoots.size
   let floating = 0
   const floatingRoots = new Set<number>()
+  // The lowest point of each component, so a cavity (a shell inside another, as hollowing makes)
+  // isn't mistaken for a part floating in the air.
+  const lowest = new Map<number, number>()
+  for (let v = 0; v < nVerts; v++) {
+    const r = ds.find(v)
+    if (compMinZ.get(r) === vz[v] && !lowest.has(r)) lowest.set(r, v)
+  }
+  let enclosedChecks = 0
+  const enclosed = (r: number) => {
+    const v = lowest.get(r)
+    if (v === undefined || ++enclosedChecks > 20) return false
+    // Count crossings of a ray straight down from just under the lowest point, against other components.
+    const x = vx[v]! + 1.3e-4, y = vy[v]! + 0.7e-4, z = vz[v]! - 1e-4
+    let crossings = 0
+    for (let t = 0; t < triCount; t++) {
+      if (!goodFace[t] || ds.find(tri[t * 3]) === r) continue
+      const o = t * 9
+      const ax = p[o]!, ay = p[o + 1]!, bx = p[o + 3]!, by = p[o + 4]!, cx = p[o + 6]!, cy = p[o + 7]!
+      const d = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay)
+      if (Math.abs(d) < 1e-12) continue
+      const u = ((bx - x) * (cy - y) - (cx - x) * (by - y)) / d
+      const w = ((cx - x) * (ay - y) - (ax - x) * (cy - y)) / d
+      if (u < 0 || w < 0 || u + w > 1) continue
+      const hz = u * p[o + 2]! + w * p[o + 5]! + (1 - u - w) * p[o + 8]!
+      if (hz < z) crossings++
+    }
+    return crossings % 2 === 1
+  }
   for (const r of usedRoots) {
-    if ((compMinZ.get(r) ?? 0) > minZ + 0.5) {
+    if ((compMinZ.get(r) ?? 0) > minZ + 0.5 && !enclosed(r)) {
       floating++
       floatingRoots.add(r)
     }

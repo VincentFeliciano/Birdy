@@ -3,6 +3,13 @@
   const ICONS = {
     globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
     split: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M11 4v16"/>',
+    merge: '<circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/>',
+    subtract: '<rect x="4" y="6" width="12" height="12" rx="1"/><circle cx="17" cy="12" r="4" stroke-dasharray="2 2"/>',
+    intersect: '<circle cx="9" cy="12" r="5" stroke-dasharray="2 2"/><circle cx="15" cy="12" r="5" stroke-dasharray="2 2"/><path d="M12 8a5 5 0 0 1 0 8 5 5 0 0 1 0-8z" fill="currentColor"/>',
+    cut: '<circle cx="6" cy="7" r="2.5"/><circle cx="6" cy="17" r="2.5"/><path d="M8 8.5l12 8M8 15.5l12-8"/>',
+    simplify: '<path d="M4 18l5-10 4 6 3-4 4 8z"/>',
+    smooth: '<path d="M3 15c3-6 6-6 9 0s6 6 9 0"/>',
+    hollow: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1" stroke-dasharray="2 2"/>',
     eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     shells: '<circle cx="8" cy="8" r="4"/><circle cx="16" cy="16" r="4"/><path d="M11 13l2-2" stroke-dasharray="1 2"/>',
     cube: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>',

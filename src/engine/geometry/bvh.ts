@@ -188,3 +188,113 @@ export function trisCross(p: ArrayLike<number>, i: number, j: number) {
   }
   return false
 }
+
+/** Squared distance from (x, y, z) to the closest point of triangle p[o..o+9] (Ericson). */
+export function distTri2(x: number, y: number, z: number, p: ArrayLike<number>, o: number): number {
+  const ax = p[o]!, ay = p[o + 1]!, az = p[o + 2]!
+  const bx = p[o + 3]!, by = p[o + 4]!, bz = p[o + 5]!
+  const cx = p[o + 6]!, cy = p[o + 7]!, cz = p[o + 8]!
+  const abx = bx - ax, aby = by - ay, abz = bz - az
+  const acx = cx - ax, acy = cy - ay, acz = cz - az
+  const apx = x - ax, apy = y - ay, apz = z - az
+  const d1 = abx * apx + aby * apy + abz * apz
+  const d2 = acx * apx + acy * apy + acz * apz
+  const sq = (qx: number, qy: number, qz: number) => (x - qx) ** 2 + (y - qy) ** 2 + (z - qz) ** 2
+  if (d1 <= 0 && d2 <= 0) return sq(ax, ay, az)
+  const bpx = x - bx, bpy = y - by, bpz = z - bz
+  const d3 = abx * bpx + aby * bpy + abz * bpz
+  const d4 = acx * bpx + acy * bpy + acz * bpz
+  if (d3 >= 0 && d4 <= d3) return sq(bx, by, bz)
+  const vc = d1 * d4 - d3 * d2
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+    const v = d1 / (d1 - d3)
+    return sq(ax + abx * v, ay + aby * v, az + abz * v)
+  }
+  const cpx = x - cx, cpy = y - cy, cpz = z - cz
+  const d5 = abx * cpx + aby * cpy + abz * cpz
+  const d6 = acx * cpx + acy * cpy + acz * cpz
+  if (d6 >= 0 && d5 <= d6) return sq(cx, cy, cz)
+  const vb = d5 * d2 - d1 * d6
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+    const w = d2 / (d2 - d6)
+    return sq(ax + acx * w, ay + acy * w, az + acz * w)
+  }
+  const va = d3 * d6 - d5 * d4
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+    const w = (d4 - d3) / (d4 - d3 + (d5 - d6))
+    return sq(bx + (cx - bx) * w, by + (cy - by) * w, bz + (cz - bz) * w)
+  }
+  const den = 1 / (va + vb + vc)
+  const v = vb * den
+  const w = vc * den
+  return sq(ax + abx * v + acx * w, ay + aby * v + acy * w, az + abz * v + acz * w)
+}
+
+/** Distance from a point to the nearest triangle (branch and bound over the BVH). */
+export function nearestDistance(bvh: TriBVH, x: number, y: number, z: number, maxD = Infinity): number {
+  if (!bvh.nodes) return Infinity
+  let best = maxD * maxD
+  const stack = [0]
+  while (stack.length) {
+    const id = stack.pop()!
+    const b = id * 6
+    const dx = Math.max(bvh.box[b]! - x, 0, x - bvh.box[b + 3]!)
+    const dy = Math.max(bvh.box[b + 1]! - y, 0, y - bvh.box[b + 4]!)
+    const dz = Math.max(bvh.box[b + 2]! - z, 0, z - bvh.box[b + 5]!)
+    if (dx * dx + dy * dy + dz * dz >= best) continue
+    const l = bvh.node[id * 3]!
+    if (l >= 0) {
+      stack.push(l, bvh.node[id * 3 + 1]!)
+      continue
+    }
+    const s = bvh.node[id * 3 + 1]!
+    const n = bvh.node[id * 3 + 2]!
+    for (let i = s; i < s + n; i++) {
+      const d = distTri2(x, y, z, bvh.p, bvh.order[i]! * 9)
+      if (d < best) best = d
+    }
+  }
+  return Math.sqrt(best)
+}
+
+/**
+ * Every crossing of the axis-aligned line through (a, b) with the mesh, sorted along `axis`:
+ * the position, and +1 where the line enters a surface (its face points back along the axis) or
+ * -1 where it leaves.
+ */
+export function lineHits(bvh: TriBVH, axis: 0 | 1 | 2, a: number, b: number): { at: number; dir: number }[] {
+  const out: { at: number; dir: number }[] = []
+  if (!bvh.nodes) return out
+  // The other two axes, in order.
+  const u = axis === 0 ? 1 : 0
+  const v = axis === 2 ? 1 : 2
+  const stack = [0]
+  const p = bvh.p
+  while (stack.length) {
+    const id = stack.pop()!
+    const bb = id * 6
+    if (bvh.box[bb + u]! > a || bvh.box[bb + 3 + u]! < a || bvh.box[bb + v]! > b || bvh.box[bb + 3 + v]! < b) continue
+    const l = bvh.node[id * 3]!
+    if (l >= 0) {
+      stack.push(l, bvh.node[id * 3 + 1]!)
+      continue
+    }
+    const s = bvh.node[id * 3 + 1]!
+    const n = bvh.node[id * 3 + 2]!
+    for (let i = s; i < s + n; i++) {
+      const o = bvh.order[i]! * 9
+      // 2-D point-in-triangle in the (u, v) plane, then interpolate the axis coordinate.
+      const x0 = p[o + u]!, y0 = p[o + v]!, x1 = p[o + 3 + u]!, y1 = p[o + 3 + v]!, x2 = p[o + 6 + u]!, y2 = p[o + 6 + v]!
+      const det = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+      if (Math.abs(det) < 1e-14) continue
+      const l0 = ((y1 - y2) * (a - x2) + (x2 - x1) * (b - y2)) / det
+      const l1 = ((y2 - y0) * (a - x2) + (x0 - x2) * (b - y2)) / det
+      const l2 = 1 - l0 - l1
+      if (l0 < 0 || l1 < 0 || l2 < 0) continue
+      // The face normal's component along the axis has the sign of det for a right-handed (u, v, axis).
+      const flip = axis === 1 ? -1 : 1
+      out.push({ at: l0 * p[o + axis]! + l1 * p[o + 3 + axis]! + l2 * p[o + 6 + axis]!, dir: det * flip > 0 ? -1 : 1 })
+    }
+  }
+  return out.sort((x, y) => x.at - y.at)
+}

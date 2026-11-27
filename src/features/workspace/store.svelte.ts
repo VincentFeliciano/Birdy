@@ -14,6 +14,10 @@ import { packRows } from '../../engine/geometry/arrange'
 import { rankOrientations } from '../../engine/geometry/orient'
 import { settle } from '../../engine/geometry/settle'
 import { splitShells } from '../../engine/geometry/shells'
+import { runCsg, runCsgInfo } from '../../engine/geometry/runCsg'
+import type { ChopOptions } from '../../engine/geometry/chop'
+import { smoothMesh } from '../../engine/geometry/smooth'
+import type { BooleanOp } from '../../engine/geometry/csg'
 
 function storedBed(): BedSize {
   try {
@@ -90,6 +94,9 @@ export const ws = $state({
   selPart: 0,
   /** Show only the selected part in the 3D view. */
   isolate: false,
+  /** A geometry edit in progress (shown on the buttons), and the last one that can be undone. */
+  working: null as string | null,
+  undoLabel: null as string | null,
 })
 
 export function remember() {
@@ -114,6 +121,8 @@ interface Doc {
   initialZ: number
   /** Each part's mesh as loaded, kept while a repair is applied so it can be undone. */
   beforeRepair?: { parts: Map<THREE.Group, PartInfo & { children: THREE.Object3D[] }>; warnings: string[] }
+  /** The plate's parts before the last edit (merge, cut, simplify…), for Undo. */
+  lastEdit?: { label: string; parts: THREE.Group[]; sel: THREE.Group }
   fixNote: string | null
 }
 /** What each part wrapper keeps in userData. */
@@ -124,7 +133,8 @@ interface PartInfo {
   meshes: number
 }
 const info = (part: THREE.Object3D) => part.userData as PartInfo
-const partsOf = (doc: Doc) => doc.wrapper.children as THREE.Group[]
+// A copy, so callers can add and remove parts while walking the list.
+const partsOf = (doc: Doc) => [...doc.wrapper.children] as THREE.Group[]
 
 const docs = new Map<string, Doc>()
 let viewer: Viewer | null = null
@@ -359,6 +369,7 @@ export async function openModelFile(file: ModelFile) {
 
 export function activate(id: string, frame = false) {
   if (ws.isolate) setIsolate(false)
+  ws.undoLabel = docs.get(id)?.lastEdit?.label ?? null
   const doc = docs.get(id)
   if (!doc) return
   if (ws.activeId !== id) modelListener.call('switch')
@@ -861,6 +872,12 @@ export function setIsolate(on: boolean) {
   viewer?.setIsolated(on && doc ? doc.sel : null)
 }
 
+/** Moves a part built in world space into the plate group's space, so it stays where it was. */
+function toPlateSpace(doc: Doc, part: THREE.Object3D) {
+  doc.wrapper.updateMatrixWorld(true)
+  part.applyMatrix4(doc.wrapper.matrixWorld.clone().invert())
+}
+
 /** A new plate part from world-space triangles, standing where they are. */
 function partFromTriangles(tris: Float32Array, name: string, material: THREE.Material) {
   const geo = new THREE.BufferGeometry()
@@ -904,6 +921,7 @@ export function splitIntoParts() {
   const base = info(part).name.replace(/\.[^.]+$/, '')
   const at = partsOf(doc).indexOf(part)
   const made = shells.map((tris, i) => partFromTriangles(tris, `${base} · shell ${i + 1}`, material.clone()))
+  for (const p of made) toPlateSpace(doc, p)
   doc.wrapper.remove(part)
   doc.beforeRepair?.parts.delete(part)
   disposeTree(part)
@@ -913,6 +931,253 @@ export function splitIntoParts() {
   setIsolate(false)
   afterPlateChange(doc)
   setFixNote(`Split into ${made.length} parts, largest first. Remove any you don't want from the plate list.`)
+}
+
+// ---- Geometry edits: merge, subtract, overlap, cut, simplify, smooth, rebuild, hollow -------------
+
+function materialOf(part: THREE.Object3D): THREE.Material {
+  let material: THREE.Material | null = null
+  part.traverse((o) => {
+    const m = o as THREE.Mesh
+    if (!material && m.isMesh && !Array.isArray(m.material)) material = m.material
+  })
+  return (material as THREE.Material | null)?.clone() ?? defaultMaterial()
+}
+
+/** Swaps `removed` parts for `added` ones, keeping the removed ones for Undo. */
+function replaceParts(doc: Doc, removed: THREE.Group[], added: THREE.Group[], label: string) {
+  if (doc.lastEdit) for (const p of doc.lastEdit.parts) if (!p.parent) disposeTree(p)
+  const at = Math.max(0, partsOf(doc).indexOf(removed[0]!))
+  doc.lastEdit = { label, parts: [...partsOf(doc)], sel: doc.sel }
+  doc.wrapper.updateMatrixWorld(true)
+  const was = removed.length === 1 ? new THREE.Box3().setFromObject(removed[0]!, true).min.z : NaN
+  for (const p of removed) {
+    doc.wrapper.remove(p)
+    doc.beforeRepair?.parts.delete(p)
+  }
+  added.forEach((p, i) => {
+    toPlateSpace(doc, p)
+    doc.wrapper.add(p)
+    const kids = doc.wrapper.children
+    kids.splice(kids.indexOf(p), 1)
+    kids.splice(Math.min(at + i, kids.length), 0, p)
+  })
+  // A reworked part (simplify, smooth, rebuild, hollow) keeps its floor, so it doesn't sink into
+  // or lift off the plate when its surface moves a little.
+  if (removed.length === 1 && added.length === 1) {
+    doc.wrapper.updateMatrixWorld(true)
+    const now = new THREE.Box3().setFromObject(added[0]!, true).min.z
+    if (Number.isFinite(was) && Number.isFinite(now)) {
+      added[0]!.position.z += was - now
+      added[0]!.updateMatrixWorld(true)
+    }
+  }
+  doc.sel = added[0] ?? partsOf(doc)[0]!
+  ws.undoLabel = label
+  if (ws.isolate) setIsolate(false)
+  afterPlateChange(doc)
+}
+
+/** Puts the plate back as it was before the last edit. */
+/** World bounds of the selected part, for tools that work along an axis. */
+export function selectedBounds(): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } | null {
+  const doc = activeDoc()
+  if (!doc) return null
+  doc.sel.updateMatrixWorld(true)
+  const b = new THREE.Box3().setFromObject(doc.sel, true)
+  return b.isEmpty() ? null : { min: { x: b.min.x, y: b.min.y, z: b.min.z }, max: { x: b.max.x, y: b.max.y, z: b.max.z } }
+}
+
+export function undoEdit() {
+  const doc = activeDoc()
+  if (!doc?.lastEdit) return
+  const { parts, sel, label } = doc.lastEdit
+  for (const p of [...partsOf(doc)]) {
+    doc.wrapper.remove(p)
+    if (!parts.includes(p)) disposeTree(p)
+  }
+  for (const p of parts) doc.wrapper.add(p)
+  doc.sel = sel
+  doc.lastEdit = undefined
+  ws.undoLabel = null
+  afterPlateChange(doc)
+  setFixNote(`Undid ${label.toLowerCase()}.`)
+}
+
+async function edit(label: string, fn: (doc: Doc) => Promise<string | void>) {
+  const doc = activeDoc()
+  if (!doc || ws.working) return
+  ws.working = label
+  ws.error = null
+  await new Promise((r) => setTimeout(r, 20))
+  try {
+    const note = await fn(doc)
+    if (note) setFixNote(note)
+  } catch (err) {
+    setFixNote(null)
+    ws.error = `${label} failed: ${(err as Error).message}`
+  } finally {
+    ws.working = null
+  }
+}
+
+const tris = (part: THREE.Object3D) => {
+  part.updateMatrixWorld(true)
+  return worldTriangles(part).positions
+}
+const nameOf = (part: THREE.Object3D) => info(part).name.replace(/\.[^.]+$/, '')
+
+/**
+ * Booleans between the parts on the plate. Union: all of them become one solid. Difference: the
+ * selected part is cut away from every other part. Intersect: each other part keeps only where it
+ * overlaps the selected one.
+ */
+export function combineParts(op: BooleanOp) {
+  return edit(op === 'union' ? 'Merge' : op === 'difference' ? 'Subtract' : 'Keep overlap', async (doc) => {
+    const parts = partsOf(doc)
+    if (parts.length < 2) return 'Add another model to the plate first (Add model), then combine them.'
+    if (op === 'union') {
+      const [out] = await runCsg({ op: 'boolean', kind: 'union', solids: parts.map(tris), names: parts.map(nameOf) })
+      replaceParts(doc, parts, [partFromTriangles(out!, 'Merged', materialOf(parts[0]!))], 'Merge')
+      return `Merged ${parts.length} models into one solid.`
+    }
+    const tool = doc.sel
+    const others = parts.filter((p) => p !== tool)
+    const made: THREE.Group[] = []
+    const skipped: string[] = []
+    for (const other of others) {
+      try {
+        const [out] = await runCsg({ op: 'boolean', kind: op, solids: [tris(other), tris(tool)], names: [nameOf(other), nameOf(tool)] })
+        made.push(partFromTriangles(out!, `${nameOf(other)} ${op === 'difference' ? 'cut' : 'overlap'}`, materialOf(other)))
+      } catch (err) {
+        const msg = (err as Error).message
+        if (/closed solid/.test(msg)) throw err
+        skipped.push(nameOf(other))
+      }
+    }
+    if (!made.length) throw new Error(op === 'intersect' ? "The selected model doesn't overlap any other." : 'Nothing would be left.')
+    // Parts the tool didn't touch stay as they are.
+    const untouched = others.filter((o) => skipped.includes(nameOf(o)))
+    replaceParts(doc, [...others.filter((o) => !untouched.includes(o)), tool], made, op === 'difference' ? 'Subtract' : 'Keep overlap')
+    return op === 'difference'
+      ? `Cut the selected model out of ${made.length} model${made.length > 1 ? 's' : ''}.`
+      : `Kept only where the selected model overlaps ${made.length} model${made.length > 1 ? 's' : ''}.`
+  })
+}
+
+/** Cuts the selected part with a plane across `axis` at `at` mm; keeps both halves (pulled apart), or one. */
+export function cutPart(axis: 'x' | 'y' | 'z', at: number, keep: 'both' | 'low' | 'high' = 'both') {
+  return edit('Cut', async (doc) => {
+    const part = doc.sel
+    const normal: [number, number, number] = [axis === 'x' ? 1 : 0, axis === 'y' ? 1 : 0, axis === 'z' ? 1 : 0]
+    const [high, low] = await runCsg({ op: 'cut', solid: tris(part), normal, offset: at })
+    if (!high!.length || !low!.length) throw new Error(`The cut at ${at} mm misses the model.`)
+    const made: THREE.Group[] = []
+    if (keep !== 'high') made.push(partFromTriangles(low!, `${nameOf(part)} · ${axis === 'z' ? 'bottom' : 'part A'}`, materialOf(part)))
+    if (keep !== 'low') {
+      const h = partFromTriangles(high!, `${nameOf(part)} · ${axis === 'z' ? 'top' : 'part B'}`, materialOf(part))
+      // Pull the halves apart so the cut is visible.
+      if (keep === 'both') h.position[axis] += 4
+      made.push(h)
+    }
+    for (const p of made) {
+      p.updateMatrixWorld(true)
+      p.position.z -= new THREE.Box3().setFromObject(p, true).min.z
+    }
+    replaceParts(doc, [part], made, 'Cut')
+    return keep === 'both' ? 'Cut in two; both halves are now separate parts, standing on the plate.' : 'Cut, keeping one side.'
+  })
+}
+
+/**
+ * Split to fit: cuts the selected part into pieces that each fit the printer (BED), with pegs,
+ * dowel holes or filament-pin holes on the cut faces. Pieces are pulled slightly apart.
+ */
+export function splitToFit(options: Partial<ChopOptions>) {
+  return edit('Split to fit', async (doc) => {
+    const part = doc.sel
+    const { result, info } = await runCsgInfo({ op: 'chop', solid: tris(part), options: { ...options, bed: [BED.x, BED.y, BED.z] } })
+    if (!info) throw new Error('The split returned nothing.')
+    const pieceCount = result.length - info.dowels
+    if (pieceCount < 2) return `It already fits the ${BED.x} × ${BED.y} × ${BED.z} mm build volume, so nothing was cut.`
+    const base = nameOf(part)
+    const made: THREE.Group[] = []
+    for (let i = 0; i < pieceCount; i++) {
+      const p = partFromTriangles(result[i]!, `${base} · ${i + 1} of ${pieceCount}`, materialOf(part))
+      const o = info.offsets[i]!
+      p.position.x += o[0]
+      p.position.y += o[1]
+      p.position.z += o[2]
+      made.push(p)
+    }
+    // Loose dowels sit in a row in front of the model.
+    const front = new THREE.Box3().setFromObject(part, true)
+    for (let i = 0; i < info.dowels; i++) {
+      const d = partFromTriangles(result[pieceCount + i]!, `${base} · dowel ${i + 1}`, materialOf(part))
+      d.position.set(front.min.x + 4 + i * 10, front.min.y - 12, 0)
+      made.push(d)
+    }
+    replaceParts(doc, [part], made, 'Split to fit')
+    // Lay the pieces out side by side on the plate (stacked pieces would otherwise float or overlap).
+    const onOnePlate = arrangePlate()
+    const bits = [`Split into ${pieceCount} pieces that each fit ${BED.x} × ${BED.y} × ${BED.z} mm (${info.cuts} cut${info.cuts === 1 ? '' : 's'})`]
+    if (info.joiners) bits.push(options.joiner === 'pegs' ? `${info.joiners} pegs and sockets` : options.joiner === 'dowels' ? `${info.joiners} dowel holes, plus ${info.dowels} dowels to print` : `${info.joiners} holes for 1.75 mm filament pins`)
+    if (info.skipped) bits.push(`${info.skipped} cut face${info.skipped === 1 ? ' was' : 's were'} too small for a joiner`)
+    if (info.oversize) bits.push(`${info.oversize} piece${info.oversize === 1 ? " still doesn't" : "s still don't"} fit`)
+    return bits.join('; ') + (onOnePlate ? '. They are laid out on the plate.' : ". They don't all fit on one plate: save as 3MF and slice a few at a time, or remove some.")
+  })
+}
+
+/** Fewer triangles, keeping the surface within `tolerance` mm. */
+export function simplifyPart(tolerance: number) {
+  return edit('Simplify', async (doc) => {
+    const part = doc.sel
+    const before = info(part).triangles
+    const [out] = await runCsg({ op: 'simplify', solid: tris(part), tolerance })
+    const p = partFromTriangles(out!, info(part).name, materialOf(part))
+    replaceParts(doc, [part], [p], 'Simplify')
+    const after = out!.length / 9
+    return `Simplified: ${before.toLocaleString()} → ${after.toLocaleString()} triangles (${Math.round((1 - after / Math.max(1, before)) * 100)}% fewer), within ${tolerance} mm.`
+  })
+}
+
+/** Evens out bumps and scan noise (Taubin smoothing, so it barely shrinks). */
+export function smoothPart(passes: number) {
+  return edit('Smooth', async (doc) => {
+    const part = doc.sel
+    const out = smoothMesh(tris(part), passes)
+    replaceParts(doc, [part], [partFromTriangles(out, info(part).name, materialOf(part))], 'Smooth')
+    return `Smoothed with ${passes} passes.`
+  })
+}
+
+/** Rebuilds the selected part as one clean closed solid from its volume. */
+export function rebuildPart(voxel: number) {
+  return edit('Rebuild', async (doc) => {
+    const part = doc.sel
+    const [out] = await runCsg({ op: 'rebuild', solid: tris(part), voxel })
+    replaceParts(doc, [part], [partFromTriangles(out!, info(part).name, materialOf(part))], 'Rebuild')
+    return `Rebuilt as one closed solid at ${voxel} mm detail. Details smaller than that are softened.`
+  })
+}
+
+/** Leaves walls `wall` mm thick and an empty inside. */
+export function hollowPart(wall: number) {
+  return edit('Hollow', async (doc) => {
+    const part = doc.sel
+    const before = Math.abs(volumeOfTris(tris(part)))
+    const [out] = await runCsg({ op: 'hollow', solid: tris(part), wall, voxel: Math.max(0.3, wall / 3) })
+    replaceParts(doc, [part], [partFromTriangles(out!, info(part).name, materialOf(part))], 'Hollow')
+    const after = Math.abs(volumeOfTris(out!))
+    return `Hollowed with ${wall} mm walls: ${(before / 1000).toFixed(1)} → ${(after / 1000).toFixed(1)} cm³. For resin, add drain holes when slicing so resin can't stay trapped inside.`
+  })
+}
+
+function volumeOfTris(p: Float32Array) {
+  let v = 0
+  for (let o = 0; o + 8 < p.length; o += 9)
+    v += (p[o]! * (p[o + 4]! * p[o + 8]! - p[o + 5]! * p[o + 7]!) - p[o + 1]! * (p[o + 3]! * p[o + 8]! - p[o + 5]! * p[o + 6]!) + p[o + 2]! * (p[o + 3]! * p[o + 7]! - p[o + 4]! * p[o + 6]!)) / 6
+  return v
 }
 
 export function removePart() {
