@@ -400,11 +400,19 @@ function fdmHistory(how: 'saved' | 'sent' | 'usb', printer: string, path?: strin
 
 export async function saveGcode() {
   const id = sl.result?.jobId
-  if (!id) return
-  const r = await window.api.engine.saveGcode(id)
-  if (r.ok && r.path) fdmHistory('saved', sl.settings.machine, r.path)
-  if (r.ok && r.path) ws.notice = { text: `Saved ${r.path.split(/[\\/]/).pop()} and verified it on disk.` }
-  else if (!r.canceled) sl.error = r.error ?? 'Saving the G-code failed.'
+  if (!id) {
+    sl.error = 'Slice the model first, then save its G-code.'
+    return
+  }
+  sl.error = null
+  try {
+    const r = await window.api.engine.saveGcode(id)
+    if (r.ok && r.path) fdmHistory('saved', sl.settings.machine, r.path)
+    if (r.ok && r.path) ws.notice = { text: `Saved ${r.path} and verified it on disk.` }
+    else if (!r.canceled) sl.error = r.error ?? 'Saving the G-code failed.'
+  } catch (err) {
+    sl.error = `Saving the G-code failed: ${cleanError(err)}`
+  }
 }
 
 export function choosePrinter(id: string) {

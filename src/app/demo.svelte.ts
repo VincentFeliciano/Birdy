@@ -10,7 +10,7 @@ import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
 import { addShape, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
-import { chooseMachine, importFrom, installEngine, loadCatalog, openPrinterEditor, setPreset, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
+import { chooseMachine, importFrom, installEngine, loadCatalog, openPrinterEditor, saveGcode, setPreset, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 import { BED } from '../features/workspace/store.svelte'
 
 /** Builds a small printable sample (a torus knot, ~70 mm) as a real binary STL and opens it. */
@@ -671,6 +671,10 @@ Shape {
       sl.printers = await api.list()
     }
     console.log(`slice: ${sl.result?.summary?.printTime} ${sl.result?.summary?.filamentG}g layers=${sl.preview.layers} features=${sl.preview.features.map((f) => f.name).join('/')}`)
+    if ((window as unknown as { __demoSave?: boolean }).__demoSave) {
+      await saveGcode()
+      console.log(`save: notice=${ws.notice?.text} error=${sl.error}`)
+    }
     if (sl.result?.jobId) {
       // What the engine actually used, from the G-code's settings block.
       const text = new TextDecoder().decode(await window.api.engine.readGcode(sl.result.jobId))

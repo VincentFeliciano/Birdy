@@ -459,17 +459,36 @@ export class SlicingEngine {
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }
-    const res = await dialog.showSaveDialog(win, {
+    const exportsDir = join(app.getPath('documents'), 'Birdy', 'Exports')
+    await mkdir(exportsDir, { recursive: true }).catch(() => {})
+    // Test runs (--demo with BIRDY_DEMO_SAVE) save without the dialog.
+    const forced = process.argv.includes('--demo') ? process.env.BIRDY_DEMO_SAVE : undefined
+    const res = forced ? { canceled: false, filePath: forced } : await dialog.showSaveDialog(win, {
       title: 'Save G-code',
-      defaultPath: join(app.getPath('documents'), 'Birdy', 'Exports', src.split(/[\\/]/).pop()!),
+      defaultPath: join(exportsDir, src.split(/[\\/]/).pop()!),
       filters: [{ name: 'G-code', extensions: ['gcode'] }],
     })
     if (res.canceled || !res.filePath) return { ok: false, canceled: true }
-    await mkdir(dirname(res.filePath), { recursive: true })
-    await copyFile(src, res.filePath)
-    const [a, b] = await Promise.all([stat(src), stat(res.filePath)])
-    if (a.size !== b.size) return { ok: false, error: 'The saved file could not be verified.' }
-    return { ok: true, path: res.filePath }
+    const dest = /\.(gcode|gco|g)$/i.test(res.filePath) ? res.filePath : `${res.filePath}.gcode`
+    // Any failure is reported to the user, never thrown away.
+    try {
+      await mkdir(dirname(dest), { recursive: true })
+      await copyWithRetry(src, dest)
+      const [a, b] = await Promise.all([stat(src), stat(dest)])
+      if (a.size !== b.size) return { ok: false, error: 'The saved file could not be verified.' }
+      return { ok: true, path: dest }
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException
+      const why =
+        e.code === 'EPERM' || e.code === 'EACCES'
+          ? 'Windows would not let Birdy write there (the folder may be protected, or the file is open in another program). Pick another folder.'
+          : e.code === 'EBUSY'
+            ? 'The file is open in another program. Close it or pick another name.'
+            : e.code === 'ENOSPC'
+              ? 'The drive is full.'
+              : e.message
+      return { ok: false, error: `Couldn't save the G-code: ${why}` }
+    }
   }
 }
 
