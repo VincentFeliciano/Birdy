@@ -145,6 +145,11 @@ export class Viewer {
 
   /** Fired while dragging the gizmo (`live`) and once when a drag ends. */
   onTransform: ((live: boolean) => void) | null = null
+  /** Fired when a click lands on one of the model's parts (a direct child of the model). */
+  onPick: ((part: THREE.Object3D) => void) | null = null
+  /** The part the gizmo and bounding box follow: the model itself, or one part on a shared plate. */
+  private target: THREE.Object3D | null = null
+  private downAt: { x: number; y: number } | null = null
 
   constructor(private container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
@@ -187,6 +192,18 @@ export class Viewer {
       this.onTransform?.(true)
     })
     this.scene.add(this.gizmo.getHelper())
+    // A click (not a drag) on a part selects it.
+    const canvas = this.renderer.domElement
+    canvas.addEventListener('pointerdown', (e) => {
+      this.downAt = e.button === 0 && !this.gizmo.axis ? { x: e.clientX, y: e.clientY } : null
+    })
+    canvas.addEventListener('pointerup', (e) => {
+      const at = this.downAt
+      this.downAt = null
+      if (!at || Math.hypot(e.clientX - at.x, e.clientY - at.y) > 4 || !this.model || !this.onPick) return
+      const part = this.pick(e.clientX, e.clientY)
+      if (part) this.onPick(part)
+    })
     this.marks.matrixAutoUpdate = false
     this.scene.add(this.marks, this.rings, this.islands)
 
@@ -490,18 +507,40 @@ export class Viewer {
     return this.model ? this.model.matrixWorld.clone() : null
   }
 
-  setModel(model: THREE.Object3D | null) {
-    if (this.model) {
+  /** Shows `model`; the gizmo and bounding box follow `target` (default: the whole model). */
+  setModel(model: THREE.Object3D | null, target: THREE.Object3D | null = model) {
+    if (this.model && this.model !== model) {
       this.scene.remove(this.model)
       this.model.visible = true
     }
     this.gizmo.detach()
     this.model = model
+    this.target = model ? target : null
     if (model) {
       this.scene.add(model)
       this.attachGizmo()
     }
     this.updateBBox()
+  }
+
+  /** Points the gizmo and bounding box at one part of the model. */
+  setTarget(target: THREE.Object3D | null) {
+    this.target = target
+    this.attachGizmo()
+    this.updateBBox()
+  }
+
+  /** The direct child of the model under the given screen point, if any. */
+  private pick(clientX: number, clientY: number): THREE.Object3D | null {
+    if (!this.model) return null
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
+    const ray = new THREE.Raycaster()
+    ray.setFromCamera(ndc, this.camera)
+    const hit = ray.intersectObject(this.model, true)[0]
+    let o: THREE.Object3D | null = hit?.object ?? null
+    while (o && o.parent !== this.model) o = o.parent
+    return o
   }
 
   setTool(tool: Tool) {
@@ -510,13 +549,13 @@ export class Viewer {
   }
 
   private attachGizmo() {
-    if (!this.model || this.tool === 'select' || this.preview?.visible) {
+    if (!this.model || !this.target || this.tool === 'select' || this.preview?.visible) {
       this.gizmo.detach()
       return
     }
     this.gizmo.setMode(this.tool === 'move' ? 'translate' : this.tool)
     this.gizmo.setSpace(this.tool === 'scale' ? 'local' : 'world')
-    this.gizmo.attach(this.model)
+    this.gizmo.attach(this.target)
   }
 
   setSnapping(on: boolean) {
@@ -550,11 +589,11 @@ export class Viewer {
   }
 
   private updateBBox() {
-    if (!this.model || !this.showBBox || !this.model.visible) {
+    if (!this.model || !this.target || !this.showBBox || !this.model.visible) {
       this.bboxHelper.visible = false
       return
     }
-    this.bboxHelper.box.setFromObject(this.model)
+    this.bboxHelper.box.setFromObject(this.target)
     this.bboxHelper.visible = !this.bboxHelper.box.isEmpty()
   }
 

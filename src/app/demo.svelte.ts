@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { importDownloads as importModelsFromDownloads, models as modelsState, openFolder as openModelsFolder, openModel as openModelsModel, setModelsOpen } from '../features/models/store.svelte'
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
-import { checkNow, focusMark, openModelFile, repairActive, setXForm, ws } from '../features/workspace/store.svelte'
+import { arrangePlate, checkNow, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, makeExposureTest, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
@@ -91,6 +91,24 @@ export function installDemo() {
         await repairActive()
         await checkNow()
         console.log(`repair direct: ${issueList()} note=${ws.fixNote}`)
+      }
+      return
+    }
+    const plateDemo = (window as unknown as { __demoPlate?: string }).__demoPlate
+    if (plateDemo) {
+      await openSample()
+      ws.layout = 'workspace'
+      ws.sidebarTab = 'model'
+      duplicatePart(2)
+      const fits = arrangePlate()
+      selectPart(1)
+      await until(() => !!ws.report && !ws.checking)
+      await checkNow()
+      const stl = exportActive('stl')
+      console.log(`plate: parts=${ws.parts.length} sel=${ws.selPart} fits=${fits} verdict=${ws.report?.verdict} issues=${issueList()} stlTris=${stl ? (stl.byteLength - 84) / 50 : 0}`)
+      if (plateDemo === 'repair') {
+        await repairActive()
+        console.log(`plate repair: parts=${ws.parts.length} note=${ws.fixNote}`)
       }
       return
     }

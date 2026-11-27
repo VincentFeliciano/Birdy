@@ -10,6 +10,7 @@ import { runRepair } from '../../engine/geometry/runRepair'
 import { describeRepair } from '../../engine/geometry/repair'
 import { defaultMaterial } from '../../engine/loaders/loadModel'
 import type { BedSize, MarkKey, PrintMarks, PrintReport } from '../../engine/geometry/printCheck'
+import { packRows } from '../../engine/geometry/arrange'
 
 function storedBed(): BedSize {
   try {
@@ -81,6 +82,9 @@ export const ws = $state({
   canUndoRepair: false,
   /** Problem picked with Show: only its area is highlighted and the camera zooms to it. */
   markFocus: null as MarkKey | null,
+  /** Models on the active tab's plate, and which one the transform tools act on. */
+  parts: [] as { name: string; triangles: number }[],
+  selPart: 0,
 })
 
 export function remember() {
@@ -90,7 +94,10 @@ export function remember() {
 
 // Three.js objects live outside reactive state so Svelte never proxies them.
 interface Doc {
+  /** The plate: a group that never moves, holding one wrapper per model on it. */
   wrapper: THREE.Group
+  /** The part (model wrapper) the transform tools act on. */
+  sel: THREE.Group
   /** Original file bytes, kept so the untouched original can be added to the library. */
   original: ModelFile
   warnings: string[]
@@ -100,10 +107,20 @@ interface Doc {
   triangles: number
   meshes: number
   initialZ: number
-  /** The mesh as loaded, kept while a repair is applied so it can be undone. */
-  beforeRepair?: { children: THREE.Object3D[]; warnings: string[]; triangles: number; meshes: number }
+  /** Each part's mesh as loaded, kept while a repair is applied so it can be undone. */
+  beforeRepair?: { parts: Map<THREE.Group, PartInfo & { children: THREE.Object3D[] }>; warnings: string[] }
   fixNote: string | null
 }
+/** What each part wrapper keeps in userData. */
+interface PartInfo {
+  name: string
+  initialZ: number
+  triangles: number
+  meshes: number
+}
+const info = (part: THREE.Object3D) => part.userData as PartInfo
+const partsOf = (doc: Doc) => doc.wrapper.children as THREE.Group[]
+
 const docs = new Map<string, Doc>()
 let viewer: Viewer | null = null
 export const getViewer = () => viewer
@@ -144,12 +161,31 @@ export function attachViewer(v: Viewer | null) {
   v.setShowBBox(ws.bbox)
   v.setShowGrid(ws.grid)
   v.setSnapping(ws.snap)
+  v.onPick = (part) => {
+    const doc = activeDoc()
+    const i = doc ? partsOf(doc).indexOf(part as THREE.Group) : -1
+    if (i >= 0) selectPart(i)
+  }
   const doc = activeDoc()
   if (doc) {
-    v.setModel(doc.wrapper)
+    v.setModel(doc.wrapper, doc.sel)
     v.view('iso')
     showMarks(false)
   }
+}
+
+/** Mirrors the plate's parts into reactive state for the sidebar. */
+function syncParts(doc: Doc | undefined) {
+  if (!doc) {
+    ws.parts = []
+    ws.selPart = 0
+    return
+  }
+  const parts = partsOf(doc)
+  ws.parts = parts.map((p) => ({ name: info(p).name, triangles: info(p).triangles }))
+  ws.selPart = Math.max(0, parts.indexOf(doc.sel))
+  doc.triangles = parts.reduce((n, p) => n + info(p).triangles, 0)
+  doc.meshes = parts.reduce((n, p) => n + info(p).meshes, 0)
 }
 
 function refresh(precise = true) {
@@ -159,7 +195,7 @@ function refresh(precise = true) {
     ws.xf = null
     return
   }
-  const w = doc.wrapper
+  const w = doc.sel
   const deg = THREE.MathUtils.radToDeg
   ws.xf = {
     px: w.position.x,
@@ -172,7 +208,7 @@ function refresh(precise = true) {
     sy: w.scale.y * 100,
     sz: w.scale.z * 100,
   }
-  ws.stats = measure(w, doc.triangles, doc.meshes, precise)
+  ws.stats = measure(w, info(w).triangles, info(w).meshes, precise)
 }
 
 let checkTimer: ReturnType<typeof setTimeout> | null = null
@@ -234,7 +270,7 @@ function markModified() {
  * Wraps the loaded object so its pivot sits at the geometric centre and the model rests
  * on the plate. Geometry is never modified; only the wrapper's transform changes.
  */
-function wrap(obj: THREE.Object3D) {
+function wrap(obj: THREE.Object3D, name: string) {
   obj.updateMatrixWorld(true)
   const box = new THREE.Box3().setFromObject(obj, true)
   const center = box.getCenter(new THREE.Vector3())
@@ -243,6 +279,8 @@ function wrap(obj: THREE.Object3D) {
   const wrapper = new THREE.Group()
   wrapper.add(obj)
   wrapper.position.set(0, 0, size.z / 2)
+  const pi: PartInfo = { name, initialZ: size.z / 2, triangles: countTriangles(obj), meshes: countMeshes(obj) }
+  wrapper.userData = pi
   return { wrapper, initialZ: size.z / 2 }
 }
 
@@ -255,10 +293,13 @@ export async function openModelFile(file: ModelFile) {
   await new Promise((r) => setTimeout(r, 30))
   try {
     const { root: obj, warnings } = await parseModel(file)
-    const { wrapper, initialZ } = wrap(obj)
+    const { wrapper: part, initialZ } = wrap(obj, file.name)
+    const plate = new THREE.Group()
+    plate.add(part)
     const id = crypto.randomUUID()
     docs.set(id, {
-      wrapper,
+      wrapper: plate,
+      sel: part,
       initialZ,
       original: file,
       warnings,
@@ -295,8 +336,9 @@ export function activate(id: string, frame = false) {
   ws.fixNote = doc.fixNote
   ws.canUndoRepair = !!doc.beforeRepair
   if (!doc.report) scheduleCheck(0)
-  viewer?.setModel(doc.wrapper)
+  viewer?.setModel(doc.wrapper, doc.sel)
   viewer?.setWireframe(ws.wireframe)
+  syncParts(doc)
   showMarks(false)
   refresh()
   // Frame after the DOM settles (the sidebar may appear and narrow the viewport).
@@ -311,7 +353,7 @@ export function closeModel(id: string) {
   ws.models.splice(idx, 1)
   docs.delete(id)
   disposeTree(doc.wrapper)
-  for (const c of doc.beforeRepair?.children ?? []) disposeTree(c)
+  for (const b of doc.beforeRepair?.parts.values() ?? []) for (const c of b.children) disposeTree(c)
   if (ws.activeId === id) {
     const next = ws.models[Math.min(idx, ws.models.length - 1)]
     if (next) activate(next.id)
@@ -321,6 +363,7 @@ export function closeModel(id: string) {
       ws.markFocus = null
       viewer?.setModel(null)
       viewer?.setMarks(null, null, null, false)
+      syncParts(undefined)
       refresh()
     }
   }
@@ -375,7 +418,7 @@ export function toggle(key: 'wireframe' | 'bbox' | 'grid' | 'snap') {
 function apply(fn: (w: THREE.Group, doc: Doc) => void) {
   const doc = activeDoc()
   if (!doc) return
-  fn(doc.wrapper, doc)
+  fn(doc.sel, doc)
   doc.wrapper.updateMatrixWorld(true)
   markModified()
   modelListener?.('edit')
@@ -484,28 +527,41 @@ export async function repairActive() {
   ws.repairing = true
   ws.error = null
   try {
-    // Repair in world space (so a mirrored model's faces end up facing out), then map back.
-    const { positions } = worldTriangles(doc.wrapper)
-    const { positions: fixed, summary } = await runRepair(positions)
-    if (!docs.has(id)) return
-    doc.wrapper.updateMatrixWorld(true)
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(fixed, 3))
-    geo.applyMatrix4(doc.wrapper.matrixWorld.clone().invert())
-    geo.computeVertexNormals()
-    const mesh = new THREE.Mesh(geo, defaultMaterial())
-    mesh.name = 'repaired'
-
-    const old = [...doc.wrapper.children]
-    if (doc.beforeRepair) for (const c of old) disposeTree(c)
-    else doc.beforeRepair = { children: old, warnings: doc.warnings, triangles: doc.triangles, meshes: doc.meshes }
-    for (const c of old) doc.wrapper.remove(c)
-    doc.wrapper.add(mesh)
+    const notes: string[] = []
+    const before = doc.beforeRepair ?? { parts: new Map(), warnings: doc.warnings }
+    // Each model on the plate is repaired on its own, so they stay separate parts.
+    for (const part of [...partsOf(doc)]) {
+      // Repair in world space (so a mirrored model's faces end up facing out), then map back.
+      part.updateMatrixWorld(true)
+      const { positions } = worldTriangles(part)
+      if (!positions.length) continue
+      const { positions: fixed, summary } = await runRepair(positions)
+      if (!docs.has(id) || part.parent !== doc.wrapper) return
+      part.updateMatrixWorld(true)
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(fixed, 3))
+      geo.applyMatrix4(part.matrixWorld.clone().invert())
+      geo.computeVertexNormals()
+      const mesh = new THREE.Mesh(geo, defaultMaterial())
+      mesh.name = 'repaired'
+      const old = [...part.children]
+      if (before.parts.has(part)) for (const c of old) disposeTree(c)
+      else before.parts.set(part, { ...info(part), children: old })
+      for (const c of old) part.remove(c)
+      part.add(mesh)
+      info(part).triangles = summary.trianglesAfter
+      info(part).meshes = 1
+      notes.push(describeRepair(summary))
+    }
+    const names = partsOf(doc).map((p) => info(p).name)
+    doc.beforeRepair = before
     // The repaired mesh stands on its own; warnings about the file it came from no longer apply.
     doc.warnings = []
-    doc.triangles = summary.trianglesAfter
-    doc.meshes = 1
-    doc.fixNote = describeRepair(summary)
+    // One note when every model came out the same; otherwise one per model.
+    doc.fixNote =
+      notes.length < 2 || notes.every((n) => n === notes[0])
+        ? (notes.length > 1 ? `All ${notes.length} models: ` : '') + (notes[0] ?? '')
+        : notes.map((n, i) => `${names[i]}: ${n}`).join(' ')
     if (ws.activeId === id) {
       ws.fixNote = doc.fixNote
       ws.canUndoRepair = true
@@ -518,19 +574,21 @@ export async function repairActive() {
   }
 }
 
-/** Puts back the mesh as it was loaded. */
+/** Puts back each model's mesh as it was loaded. */
 export function undoRepair() {
   const doc = activeDoc()
   const before = doc?.beforeRepair
   if (!doc || !before) return
-  for (const c of [...doc.wrapper.children]) {
-    doc.wrapper.remove(c)
-    disposeTree(c)
+  for (const [part, b] of before.parts) {
+    for (const c of [...part.children]) {
+      part.remove(c)
+      disposeTree(c)
+    }
+    for (const c of b.children) part.add(c)
+    info(part).triangles = b.triangles
+    info(part).meshes = b.meshes
   }
-  for (const c of before.children) doc.wrapper.add(c)
   doc.warnings = before.warnings
-  doc.triangles = before.triangles
-  doc.meshes = before.meshes
   doc.beforeRepair = undefined
   doc.fixNote = null
   ws.fixNote = null
@@ -545,7 +603,8 @@ function afterGeometryChange(doc: Doc) {
   doc.marks = null
   if (docs.get(ws.activeId ?? '') === doc) {
     showMarks(false)
-    viewer?.setModel(doc.wrapper)
+    syncParts(doc)
+    viewer?.setModel(doc.wrapper, doc.sel)
     viewer?.setWireframe(ws.wireframe)
     viewer?.changed()
     refresh()
@@ -562,8 +621,8 @@ export function centerOnBed() {
 }
 
 export function resetTransform() {
-  apply((w, doc) => {
-    w.position.set(0, 0, doc.initialZ)
+  apply((w) => {
+    w.position.set(0, 0, info(w).initialZ)
     w.rotation.set(0, 0, 0)
     w.scale.set(1, 1, 1)
   })
@@ -670,4 +729,153 @@ export async function sendToSlicer(slicerId?: string) {
 
 export function toggleWorkspace() {
   ws.layout = ws.layout === 'browse' ? 'split' : 'browse'
+}
+
+// ---- Several models on one plate ----------------------------------------------------------
+
+/** Makes part `i` of the active plate the one the transform tools act on. */
+export function selectPart(i: number) {
+  const doc = activeDoc()
+  const part = doc ? partsOf(doc)[i] : undefined
+  if (!doc || !part) return
+  doc.sel = part
+  ws.selPart = i
+  viewer?.setTarget(part)
+  refresh()
+}
+
+/** Adds another model to the active plate, beside what is already there. */
+export async function addToPlate(file: ModelFile) {
+  const doc = activeDoc()
+  if (!doc) return openModelFile(file)
+  ws.error = null
+  ws.loading = `Adding ${file.name}`
+  await new Promise((r) => setTimeout(r, 30))
+  try {
+    const { root: obj, warnings } = await parseModel(file)
+    const { wrapper: part } = wrap(obj, file.name)
+    doc.warnings.push(...warnings.map((w) => `${file.name}: ${w}`))
+    placeBeside(doc, part)
+    doc.wrapper.add(part)
+    doc.sel = part
+    afterPlateChange(doc)
+  } catch (err) {
+    ws.error = `Couldn't add ${file.name}: ${(err as Error).message}`
+  } finally {
+    ws.loading = null
+  }
+}
+
+export async function addToPlateFromDialog() {
+  try {
+    const file = await window.api.files.openModel()
+    if (file) await addToPlate(file)
+  } catch (err) {
+    ws.error = (err as Error).message
+  }
+}
+
+/** Copies the selected model (with its own geometry, so either can be changed or removed). */
+export function duplicatePart(count = 1) {
+  const doc = activeDoc()
+  if (!doc) return
+  for (let n = 0; n < count; n++) {
+    const copy = doc.sel.clone(true)
+    copy.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (!mesh.isMesh) return
+      mesh.geometry = mesh.geometry.clone()
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => m.clone()) : mesh.material.clone()
+    })
+    copy.userData = { ...info(doc.sel), name: copyName(doc, info(doc.sel).name) }
+    placeBeside(doc, copy)
+    doc.wrapper.add(copy)
+    doc.sel = copy
+  }
+  afterPlateChange(doc)
+}
+
+/** "knot.stl" → "knot.stl #2", the first free number on this plate. */
+function copyName(doc: Doc, name: string) {
+  const base = name.replace(/ #\d+$/, '')
+  const taken = new Set(partsOf(doc).map((p) => info(p).name))
+  let n = 2
+  while (taken.has(`${base} #${n}`)) n++
+  return `${base} #${n}`
+}
+
+/** Takes the selected model off the plate (the last one stays; close the tab instead). */
+export function removePart() {
+  const doc = activeDoc()
+  if (!doc || partsOf(doc).length < 2) return
+  const parts = partsOf(doc)
+  const i = parts.indexOf(doc.sel)
+  const part = doc.sel
+  doc.wrapper.remove(part)
+  disposeTree(part)
+  const b = doc.beforeRepair?.parts.get(part)
+  if (b) {
+    for (const c of b.children) disposeTree(c)
+    doc.beforeRepair!.parts.delete(part)
+  }
+  doc.sel = partsOf(doc)[Math.max(0, i - 1)]!
+  afterPlateChange(doc)
+}
+
+/** Puts a new part to the right of everything on the plate, standing on it. */
+function placeBeside(doc: Doc, part: THREE.Group) {
+  doc.wrapper.updateMatrixWorld(true)
+  part.updateMatrixWorld(true)
+  const plate = new THREE.Box3().setFromObject(doc.wrapper, true)
+  const box = new THREE.Box3().setFromObject(part, true)
+  const size = box.getSize(new THREE.Vector3())
+  const c = box.getCenter(new THREE.Vector3())
+  part.position.x += plate.isEmpty() ? -c.x : plate.max.x + SPACING + size.x / 2 - c.x
+  part.position.y += plate.isEmpty() ? -c.y : (plate.min.y + plate.max.y) / 2 - c.y
+  part.position.z -= box.min.z
+}
+
+const SPACING = 5
+
+/**
+ * Lays every model on the plate out in rows (largest first) with a gap between them, centred on
+ * the plate, each standing on it. Returns false when they can't all fit.
+ */
+export function arrangePlate(): boolean {
+  const doc = activeDoc()
+  if (!doc) return false
+  const parts = partsOf(doc)
+  doc.wrapper.updateMatrixWorld(true)
+  const items = parts.map((p) => {
+    const box = new THREE.Box3().setFromObject(p, true)
+    return { p, box, w: box.max.x - box.min.x, d: box.max.y - box.min.y }
+  })
+  const layout = packRows(
+    items.map((it) => ({ w: it.w, d: it.d })),
+    BED.x,
+    SPACING,
+  )
+  items.forEach((it, i) => {
+    const at = layout.places[i]!
+    it.p.position.x += at.x - (it.box.min.x + it.w / 2) - layout.width / 2
+    it.p.position.y += at.y - (it.box.min.y + it.d / 2) - layout.depth / 2
+    it.p.position.z -= it.box.min.z
+  })
+  afterPlateChange(doc)
+  return layout.width <= BED.x && layout.depth <= BED.y
+}
+
+function afterPlateChange(doc: Doc) {
+  doc.wrapper.updateMatrixWorld(true)
+  markModified()
+  modelListener?.('edit')
+  doc.report = null
+  if (docs.get(ws.activeId ?? '') === doc) {
+    syncParts(doc)
+    viewer?.setModel(doc.wrapper, doc.sel)
+    viewer?.setWireframe(ws.wireframe)
+    viewer?.changed()
+    refresh()
+    scheduleCheck(0)
+  }
 }

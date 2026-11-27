@@ -5,6 +5,7 @@
   import type { SlicersState } from '../../types/ipc'
   import NumField from '../../components/NumField.svelte'
   import SlicePanel from '../slicing/SlicePanel.svelte'
+  import PlatePanel from './PlatePanel.svelte'
   import { setOverride, sl } from '../slicing/store.svelte'
   import type { Issue } from '../../engine/geometry/printCheck'
   import { MARK_STYLE } from '../../engine/three/viewer'
@@ -97,6 +98,7 @@
     {:else}
     <div class="scroll">
       {#if ws.sidebarTab === 'model'}
+        <PlatePanel />
         <section>
           <h3 class="hud-label row-head">
             Print check
@@ -248,6 +250,7 @@
           <p class="hint small">Saves the original file, a thumbnail and its print check.</p>
         </section>
       {:else if xf && s}
+        {#if ws.parts.length > 1}<PlatePanel />{/if}
         <section>
           <h3 class="hud-label">Position <span class="dim">mm</span></h3>
           <div class="row3">
