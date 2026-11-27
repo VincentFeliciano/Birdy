@@ -32,10 +32,11 @@
     saveAs,
     setDimension,
     setXForm,
+    setUniform,
     ws,
   } from '../workspace/store.svelte'
 
-  let uniform = $state(true)
+  const uniform = $derived(ws.uniform)
   const model = $derived(activeModel())
   const s = $derived(ws.stats)
   const xf = $derived(ws.xf)
@@ -289,7 +290,7 @@
               class:on={uniform}
               title={uniform ? 'Uniform scaling on' : 'Uniform scaling off'}
               aria-label="Toggle uniform scaling"
-              onclick={() => (uniform = !uniform)}>
+              onclick={() => setUniform(!ws.uniform)}>
               <Icon name={uniform ? 'lock' : 'unlock'} size={13} />
             </button>
           </h3>

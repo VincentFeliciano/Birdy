@@ -149,6 +149,11 @@ export class Viewer {
 
   /** Fired while dragging the gizmo (`live`) and once when a drag ends. */
   onTransform: ((live: boolean) => void) | null = null
+  /** Fired once when a gizmo drag starts, before anything moves (for Undo). */
+  onTransformStart: (() => void) | null = null
+  /** Scale drags keep proportions: any handle scales all three axes together. */
+  uniformScale = true
+  private scaleAtStart = new THREE.Vector3(1, 1, 1)
   /** Fired when a click lands on one of the model's parts (a direct child of the model). */
   onPick: ((part: THREE.Object3D) => void) | null = null
   /** The part the gizmo and bounding box follow: the model itself, or one part on a shared plate. */
@@ -189,12 +194,24 @@ export class Viewer {
     this.gizmo.setSize(0.85)
     this.gizmo.addEventListener('dragging-changed', (e) => {
       this.controls.enabled = !e.value
+      if (e.value) {
+        this.onTransformStart?.()
+        if (this.target) this.scaleAtStart.copy(this.target.scale)
+      }
       if (!e.value) {
         this.updateBBox()
         this.onTransform?.(false)
       }
     })
     this.gizmo.addEventListener('objectChange', () => {
+      // Uniform scaling: follow whichever axis the drag changed most, on all three axes.
+      if (this.uniformScale && this.gizmo.mode === 'scale' && this.gizmo.dragging && this.target) {
+        const s0 = this.scaleAtStart
+        const s = this.target.scale
+        const ratios = [s.x / s0.x, s.y / s0.y, s.z / s0.z].filter(Number.isFinite)
+        const f = ratios.reduce((a, b) => (Math.abs(b - 1) > Math.abs(a - 1) ? b : a), 1)
+        if (f > 0) s.set(s0.x * f, s0.y * f, s0.z * f)
+      }
       this.updateBBox(false)
       this.onTransform?.(true)
     })
@@ -755,8 +772,23 @@ export class Viewer {
     this.frame(dir)
   }
 
+  /**
+   * The preset views show the whole plate with the model on it, so a small print looks small next
+   * to the bed (true to size). Fit (F) still zooms in on the model alone.
+   */
   view(preset: ViewPreset) {
-    this.frame(VIEW_DIRS[preset].clone().normalize())
+    this.frame(VIEW_DIRS[preset].clone().normalize(), this.plateSphere())
+  }
+
+  private plateSphere(): THREE.Sphere {
+    const box = new THREE.Box3(new THREE.Vector3(-this.bedW / 2, -this.bedD / 2, 0), new THREE.Vector3(this.bedW / 2, this.bedD / 2, 0))
+    const model = this.focusSphere()
+    box.expandByPoint(model.center.clone().addScalar(-model.radius).setZ(Math.max(0, model.center.z - model.radius)))
+    box.expandByPoint(model.center.clone().addScalar(model.radius))
+    // Most of the plate's sphere is empty air above it; trim so the plate fills the view.
+    const sphere = box.getBoundingSphere(new THREE.Sphere())
+    sphere.radius *= 0.82
+    return sphere
   }
 
   private frame(dir: THREE.Vector3, sphere?: THREE.Sphere) {

@@ -8,7 +8,7 @@ import { isFdmKind } from '../types/slicing'
 import { setFavsOnly, setQuery, toggleFav } from '../features/models/store.svelte'
 import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
-import { addShape, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
+import { addShape, scaleBy, moveBy, rotateBy, undo, redo, setUniform, setDimension, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, openPrinterEditor, saveGcode, setPreset, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 import { BED } from '../features/workspace/store.svelte'
@@ -339,6 +339,33 @@ export function installDemo() {
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
         await new Promise((r) => setTimeout(r, 400))
         console.log(`edit palette ran: open=${ui.palette} working=${ws.working}`)
+      }
+      if (editDemo === 'xform') {
+        // Resize, move and turn, then step back and forward through them.
+        const where = (t: string) => console.log(`xform ${t}: size=${['x', 'y', 'z'].map((k) => ws.stats?.size[k as 'x'].toFixed(1)).join('x')} pos=${ws.xf?.px.toFixed(1)},${ws.xf?.py.toFixed(1)} rz=${ws.xf?.rz.toFixed(0)} undo=${ws.undoLabel} redo=${ws.redoLabel}`)
+        selectPart(0)
+        where('start')
+        scaleBy(200)
+        where('scaled 200%')
+        await new Promise((r) => setTimeout(r, 1300))
+        moveBy(25, 0, 0)
+        where('moved +25 X')
+        await new Promise((r) => setTimeout(r, 1300))
+        rotateBy('z', 90)
+        where('turned 90')
+        undo()
+        where('undo 1')
+        undo()
+        where('undo 2')
+        undo()
+        where('undo 3')
+        redo()
+        where('redo 1')
+        setUniform(false)
+        setDimension('x', 50, ws.uniform)
+        where('free X=50')
+        setUniform(true)
+        ws.tool = 'scale'
       }
       if (editDemo === 'fit-grid') await splitToFit({ mode: 'grid', joiner: 'dowels', diameter: 5, clearance: 0.2 })
       if (editDemo === 'shapes') for (const k of ['box', 'cylinder', 'sphere', 'cone', 'pyramid', 'torus', 'tube'] as const) await addShape(k, 20)

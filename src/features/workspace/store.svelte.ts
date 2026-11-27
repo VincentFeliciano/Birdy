@@ -98,7 +98,11 @@ export const ws = $state({
   isolate: false,
   /** A geometry edit in progress (shown on the buttons), and the last one that can be undone. */
   working: null as string | null,
+  /** What Undo and Redo would undo or redo on the active model (moves, turns, sizes, edits). */
   undoLabel: null as string | null,
+  redoLabel: null as string | null,
+  /** Scaling keeps proportions: drags and typed sizes change all three axes together. */
+  uniform: stored('uniform', '1') === '1',
 })
 
 export function remember() {
@@ -123,11 +127,22 @@ interface Doc {
   initialZ: number
   /** Each part's mesh as loaded, kept while a repair is applied so it can be undone. */
   beforeRepair?: { parts: Map<THREE.Group, PartInfo & { children: THREE.Object3D[] }>; warnings: string[] }
-  /** The plate's parts before the last edit (merge, cut, simplify…), for Undo. */
-  lastEdit?: { label: string; parts: THREE.Group[]; sel: THREE.Group }
+  /** Earlier states of the plate for Undo (newest last), and undone ones for Redo. */
+  undo?: Snap[]
+  redo?: Snap[]
   /** What was done to this model, newest last: repairs and edits. */
   history: { label: string; note: string; at: number }[]
   fixNote: string | null
+}
+/** One step back: the parts on the plate, where each sat, and which was selected. */
+interface Snap {
+  label: string
+  parts: THREE.Group[]
+  sel: THREE.Group
+  xf: [THREE.Vector3, THREE.Quaternion, THREE.Vector3][]
+  /** A change to the geometry (merge, cut…), as opposed to a move, turn or resize. */
+  geometry: boolean
+  at: number
 }
 /** What each part wrapper keeps in userData. */
 interface PartInfo {
@@ -174,6 +189,11 @@ export function attachViewer(v: Viewer | null) {
   viewer = v
   if (!v) return
   v.setBedSize(BED.x, BED.y)
+  v.onTransformStart = () => {
+    const doc = activeDoc()
+    if (doc) pushUndo(doc, ws.tool === 'rotate' ? 'Rotate' : ws.tool === 'scale' ? 'Resize' : 'Move')
+  }
+  v.uniformScale = ws.uniform
   v.onTransform = (live) => {
     markModified()
     if (!live) modelListener.call('edit')
@@ -379,9 +399,10 @@ export async function openModelFile(file: ModelFile) {
 
 export function activate(id: string, frame = false) {
   if (ws.isolate) setIsolate(false)
-  ws.undoLabel = docs.get(id)?.lastEdit?.label ?? null
   const doc = docs.get(id)
   if (!doc) return
+  ws.undoLabel = doc.undo?.at(-1)?.label ?? null
+  ws.redoLabel = doc.redo?.at(-1)?.label ?? null
   if (ws.activeId !== id) modelListener.call('switch')
   ws.activeId = id
   ws.report = doc.report
@@ -484,9 +505,10 @@ export function toggle(key: 'wireframe' | 'bbox' | 'grid' | 'snap') {
   if (key === 'snap') viewer?.setSnapping(ws.snap)
 }
 
-function apply(fn: (w: THREE.Group, doc: Doc) => void) {
+function apply(fn: (w: THREE.Group, doc: Doc) => void, label = 'Change') {
   const doc = activeDoc()
   if (!doc) return
+  pushUndo(doc, label, true)
   fn(doc.sel, doc)
   doc.wrapper.updateMatrixWorld(true)
   markModified()
@@ -496,7 +518,7 @@ function apply(fn: (w: THREE.Group, doc: Doc) => void) {
   scheduleCheck()
 }
 
-export function setXForm(key: keyof XForm, value: number, uniform = false) {
+export function setXForm(key: keyof XForm, value: number, uniform = ws.uniform) {
   if (!Number.isFinite(value)) return
   apply((w) => {
     const rad = THREE.MathUtils.degToRad
@@ -515,7 +537,7 @@ export function setXForm(key: keyof XForm, value: number, uniform = false) {
         w.scale.multiplyScalar(Math.abs(next / w.scale[axis]))
       } else w.scale[axis] = next
     }
-  })
+  }, key[0] === 'p' ? 'Move' : key[0] === 'r' ? 'Rotate' : 'Resize')
 }
 
 export function setDimension(axis: 'x' | 'y' | 'z', mm: number, uniform: boolean) {
@@ -525,20 +547,79 @@ export function setDimension(axis: 'x' | 'y' | 'z', mm: number, uniform: boolean
   apply((w) => {
     if (uniform) w.scale.multiplyScalar(f)
     else w.scale[axis] *= f
-  })
+  }, 'Resize')
+}
+
+/** Scaling keeps proportions or not, for drags and typed sizes alike. */
+export function setUniform(on: boolean) {
+  ws.uniform = on
+  localStorage.setItem('birdy.uniform', on ? '1' : '0')
+  if (viewer) viewer.uniformScale = on
+}
+
+/** Grows or shrinks the selected part by a percentage, keeping it where it stands on the plate. */
+export function scaleBy(percent: number) {
+  if (!Number.isFinite(percent) || percent <= 0 || percent === 100) return
+  apply((w) => {
+    w.updateMatrixWorld(true)
+    const before = new THREE.Box3().setFromObject(w, true)
+    const c = before.getCenter(new THREE.Vector3())
+    w.scale.multiplyScalar(percent / 100)
+    w.updateMatrixWorld(true)
+    const after = new THREE.Box3().setFromObject(w, true)
+    const c2 = after.getCenter(new THREE.Vector3())
+    w.position.x += c.x - c2.x
+    w.position.y += c.y - c2.y
+    w.position.z += before.min.z - after.min.z
+  }, 'Resize')
+}
+
+/** Sets the selected part's size as a percentage of its loaded size (all axes). */
+export function scaleTo(percent: number) {
+  const doc = activeDoc()
+  if (!doc || !Number.isFinite(percent) || percent <= 0) return
+  const now = Math.abs(doc.sel.scale.x) * 100
+  if (now > 0) scaleBy((percent / now) * 100)
+}
+
+/** Turns the selected part about a world axis through its centre, then stands it back on the plate. */
+export function rotateBy(axis: 'x' | 'y' | 'z', degrees: number) {
+  if (!Number.isFinite(degrees) || !degrees) return
+  apply((w) => {
+    w.updateMatrixWorld(true)
+    const before = new THREE.Box3().setFromObject(w, true)
+    const c = before.getCenter(new THREE.Vector3())
+    const v = new THREE.Vector3(axis === 'x' ? 1 : 0, axis === 'y' ? 1 : 0, axis === 'z' ? 1 : 0)
+    w.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(v, THREE.MathUtils.degToRad(degrees)))
+    w.updateMatrixWorld(true)
+    const after = new THREE.Box3().setFromObject(w, true)
+    const c2 = after.getCenter(new THREE.Vector3())
+    w.position.x += c.x - c2.x
+    w.position.y += c.y - c2.y
+    w.position.z += before.min.z - after.min.z
+  }, 'Rotate')
+}
+
+/** Moves the selected part by an offset (mm). */
+export function moveBy(dx: number, dy: number, dz: number) {
+  apply((w) => {
+    w.position.x += dx
+    w.position.y += dy
+    w.position.z += dz
+  }, 'Move')
 }
 
 export function mirror(axis: 'x' | 'y' | 'z') {
   apply((w) => {
     w.scale[axis] *= -1
-  })
+  }, 'Mirror')
 }
 
 export function dropToBed() {
   apply((w) => {
     const box = new THREE.Box3().setFromObject(w, true)
     w.position.z -= box.min.z
-  })
+  }, 'Drop to plate')
 }
 
 /** Scales the model down (or up) to fit the plate with a small margin, then centres and drops it. */
@@ -548,7 +629,7 @@ export function fitToBed() {
     const f = Math.min(BED.x / size.x, BED.y / size.y, BED.z / size.z) * 0.95
     if (Number.isFinite(f) && f > 0) w.scale.multiplyScalar(f)
     placeOnBed(w)
-  })
+  }, 'Scale to fit')
   setFixNote('Scaled to fit the plate.')
 }
 
@@ -557,7 +638,7 @@ export function convertUnits(factor: number) {
   apply((w) => {
     w.scale.multiplyScalar(factor)
     placeOnBed(w)
-  })
+  }, 'Change units')
   setFixNote(`Scaled by ${factor}×.`)
 }
 
@@ -621,6 +702,7 @@ export function setPartColor(color: string | null) {
 export function alignParts(axis: 'x' | 'y' | 'z', to: 'min' | 'mid' | 'max') {
   const doc = activeDoc()
   if (!doc) return
+  pushUndo(doc, 'Line up')
   doc.wrapper.updateMatrixWorld(true)
   const ref = new THREE.Box3().setFromObject(doc.sel, true)
   const target = to === 'min' ? ref.min[axis] : to === 'max' ? ref.max[axis] : (ref.min[axis] + ref.max[axis]) / 2
@@ -669,6 +751,7 @@ export async function addShape(kind: ShapeKind, size: number) {
     return openModelFile({ name: `${name}.stl`, format: 'stl', size: data.byteLength, data })
   }
   const part = partFromTriangles(tris, `${name} ${s} mm`, defaultMaterial())
+  pushUndo(doc, 'Add shape')
   placeBeside(doc, part)
   doc.wrapper.add(part)
   doc.sel = part
@@ -767,12 +850,8 @@ export async function repairActive() {
         ? (notes.length > 1 ? `All ${notes.length} models: ` : '') + (notes[0] ?? '')
         : notes.map((n, i) => `${names[i]}: ${n}`).join(' ')
     logHistory(doc, 'Repair', doc.fixNote || 'Repaired.')
-    // The repair has its own Undo; the edit before it can no longer be undone without losing the repair.
-    if (doc.lastEdit) {
-      for (const p of doc.lastEdit.parts) if (!p.parent) disposeTree(p)
-      doc.lastEdit = undefined
-      if (ws.activeId === id) ws.undoLabel = null
-    }
+    // The repair has its own Undo; steps from before it can no longer be undone without losing the repair.
+    clearUndo(doc)
     if (ws.activeId === id) {
       ws.fixNote = doc.fixNote
       ws.canUndoRepair = true
@@ -829,7 +908,7 @@ export function centerOnBed() {
     const c = new THREE.Box3().setFromObject(w, true).getCenter(new THREE.Vector3())
     w.position.x -= c.x
     w.position.y -= c.y
-  })
+  }, 'Centre')
 }
 
 export function resetTransform() {
@@ -837,7 +916,7 @@ export function resetTransform() {
     w.position.set(0, 0, info(w).initialZ)
     w.rotation.set(0, 0, 0)
     w.scale.set(1, 1, 1)
-  })
+  }, 'Reset')
   const m = activeModel()
   if (m) m.modified = false
 }
@@ -968,6 +1047,7 @@ export async function addToPlate(file: ModelFile) {
     const { root: obj, warnings } = await parseModel(file)
     const { wrapper: part } = wrap(obj, file.name)
     doc.warnings.push(...warnings.map((w) => `${file.name}: ${w}`))
+    pushUndo(doc, 'Add to plate')
     placeBeside(doc, part)
     doc.wrapper.add(part)
     doc.sel = part
@@ -992,6 +1072,7 @@ export async function addToPlateFromDialog() {
 export function duplicatePart(count = 1) {
   const doc = activeDoc()
   if (!doc) return
+  pushUndo(doc, 'Duplicate')
   for (let n = 0; n < count; n++) {
     const copy = doc.sel.clone(true)
     copy.traverse((o) => {
@@ -1075,9 +1156,9 @@ export function splitIntoParts() {
   const at = partsOf(doc).indexOf(part)
   const made = shells.map((tris, i) => partFromTriangles(tris, `${base} · shell ${i + 1}`, material.clone()))
   for (const p of made) toPlateSpace(doc, p)
+  pushUndo(doc, 'Split shells', false, true)
   doc.wrapper.remove(part)
   doc.beforeRepair?.parts.delete(part)
-  disposeTree(part)
   made.forEach((p, i) => doc.wrapper.children.splice(at + i, 0, p))
   for (const p of made) p.parent = doc.wrapper
   doc.sel = made[0]!
@@ -1100,9 +1181,8 @@ function materialOf(part: THREE.Object3D): THREE.Material {
 
 /** Swaps `removed` parts for `added` ones, keeping the removed ones for Undo. */
 function replaceParts(doc: Doc, removed: THREE.Group[], added: THREE.Group[], label: string) {
-  if (doc.lastEdit) for (const p of doc.lastEdit.parts) if (!p.parent) disposeTree(p)
   const at = Math.max(0, partsOf(doc).indexOf(removed[0]!))
-  doc.lastEdit = { label, parts: [...partsOf(doc)], sel: doc.sel }
+  pushUndo(doc, label, false, true)
   doc.wrapper.updateMatrixWorld(true)
   const was = removed.length === 1 ? new THREE.Box3().setFromObject(removed[0]!, true).min.z : NaN
   for (const p of removed) {
@@ -1127,7 +1207,6 @@ function replaceParts(doc: Doc, removed: THREE.Group[], added: THREE.Group[], la
     }
   }
   doc.sel = added[0] ?? partsOf(doc)[0]!
-  ws.undoLabel = label
   if (ws.isolate) setIsolate(false)
   afterPlateChange(doc)
 }
@@ -1142,21 +1221,96 @@ export function selectedBounds(): { min: { x: number; y: number; z: number }; ma
   return b.isEmpty() ? null : { min: { x: b.min.x, y: b.min.y, z: b.min.z }, max: { x: b.max.x, y: b.max.y, z: b.max.z } }
 }
 
-export function undoEdit() {
+/** Takes the plate back one step: a move, turn or resize, or an edit such as a merge or cut. */
+export function undo() {
   const doc = activeDoc()
-  if (!doc?.lastEdit) return
-  const { parts, sel, label } = doc.lastEdit
-  for (const p of [...partsOf(doc)]) {
-    doc.wrapper.remove(p)
-    if (!parts.includes(p)) disposeTree(p)
+  const step = doc?.undo?.pop()
+  if (!doc || !step) return
+  ;(doc.redo ??= []).push(snap(doc, step.label, step.geometry))
+  restore(doc, step)
+  setFixNote(`Undid ${step.label.toLowerCase()}.`)
+  if (step.geometry) logHistory(doc, 'Undo', `Undid ${step.label.toLowerCase()}.`)
+  syncUndo(doc)
+}
+
+/** Does again what Undo took back. */
+export function redo() {
+  const doc = activeDoc()
+  const step = doc?.redo?.pop()
+  if (!doc || !step) return
+  ;(doc.undo ??= []).push(snap(doc, step.label, step.geometry))
+  restore(doc, step)
+  setFixNote(`Redid ${step.label.toLowerCase()}.`)
+  if (step.geometry) logHistory(doc, 'Redo', `Redid ${step.label.toLowerCase()}.`)
+  syncUndo(doc)
+}
+
+export const undoEdit = undo
+
+const UNDO_LIMIT = 50
+
+function snap(doc: Doc, label: string, geometry = false): Snap {
+  const parts = partsOf(doc)
+  return { label, parts, sel: doc.sel, xf: parts.map((p) => [p.position.clone(), p.quaternion.clone(), p.scale.clone()]), geometry, at: Date.now() }
+}
+
+/**
+ * Remembers the plate as it is, before a change. Changes of the same kind in quick succession
+ * (typing a size, nudging with the arrow keys) count as one step.
+ */
+function pushUndo(doc: Doc, label: string, merge = false, geometry = false) {
+  const stack = (doc.undo ??= [])
+  const top = stack.at(-1)
+  const dropped = doc.redo ?? []
+  doc.redo = []
+  if (merge && top && !top.geometry && top.label === label && Date.now() - top.at < 1200) top.at = Date.now()
+  else {
+    stack.push(snap(doc, label, geometry))
+    if (stack.length > UNDO_LIMIT) dropped.push(...stack.splice(0, stack.length - UNDO_LIMIT))
   }
-  for (const p of parts) doc.wrapper.add(p)
-  doc.sel = sel
-  doc.lastEdit = undefined
-  ws.undoLabel = null
+  release(doc, dropped)
+  syncUndo(doc)
+}
+
+/** Frees parts that only the dropped steps still held (models removed or replaced by edits). */
+function release(doc: Doc, dropped: Snap[]) {
+  if (!dropped.length) return
+  const kept = new Set<THREE.Object3D>(partsOf(doc))
+  for (const st of [...(doc.undo ?? []), ...(doc.redo ?? [])]) for (const p of st.parts) kept.add(p)
+  for (const st of dropped)
+    for (const p of st.parts)
+      if (!kept.has(p)) {
+        kept.add(p)
+        disposeTree(p)
+      }
+}
+
+function clearUndo(doc: Doc) {
+  const dropped = [...(doc.undo ?? []), ...(doc.redo ?? [])]
+  doc.undo = []
+  doc.redo = []
+  release(doc, dropped)
+  syncUndo(doc)
+}
+
+function syncUndo(doc: Doc) {
+  if (docs.get(ws.activeId ?? '') !== doc) return
+  ws.undoLabel = doc.undo?.at(-1)?.label ?? null
+  ws.redoLabel = doc.redo?.at(-1)?.label ?? null
+}
+
+function restore(doc: Doc, step: Snap) {
+  for (const p of partsOf(doc)) doc.wrapper.remove(p)
+  step.parts.forEach((p, i) => {
+    const [pos, q, sc] = step.xf[i]!
+    p.position.copy(pos)
+    p.quaternion.copy(q)
+    p.scale.copy(sc)
+    doc.wrapper.add(p)
+  })
+  doc.sel = step.parts.includes(step.sel) ? step.sel : step.parts[0]!
+  if (ws.isolate) setIsolate(false)
   afterPlateChange(doc)
-  setFixNote(`Undid ${label.toLowerCase()}.`)
-  logHistory(doc, 'Undo', `Undid ${label.toLowerCase()}.`)
 }
 
 async function edit(label: string, fn: (doc: Doc) => Promise<string | void>) {
@@ -1166,11 +1320,12 @@ async function edit(label: string, fn: (doc: Doc) => Promise<string | void>) {
   ws.error = null
   await new Promise((r) => setTimeout(r, 20))
   try {
-    const before = doc.lastEdit
+    const before = doc.undo?.at(-1)
     const note = await fn(doc)
     if (note) setFixNote(note)
     // Only edits that changed the plate go in the history.
-    if (doc.lastEdit !== before) logHistory(doc, doc.lastEdit?.label ?? label, note || label)
+    const after = doc.undo?.at(-1)
+    if (after && after !== before && after.geometry) logHistory(doc, after.label, note || label)
   } catch (err) {
     setFixNote(null)
     ws.error = `${label} failed: ${(err as Error).message}`
@@ -1341,16 +1496,13 @@ function volumeOfTris(p: Float32Array) {
 export function removePart() {
   const doc = activeDoc()
   if (!doc || partsOf(doc).length < 2) return
+  pushUndo(doc, 'Remove')
   const parts = partsOf(doc)
   const i = parts.indexOf(doc.sel)
   const part = doc.sel
+  // Kept (not freed) so Undo can bring it back.
   doc.wrapper.remove(part)
-  disposeTree(part)
-  const b = doc.beforeRepair?.parts.get(part)
-  if (b) {
-    for (const c of b.children) disposeTree(c)
-    doc.beforeRepair!.parts.delete(part)
-  }
+  doc.beforeRepair?.parts.delete(part)
   doc.sel = partsOf(doc)[Math.max(0, i - 1)]!
   afterPlateChange(doc)
   if (ws.isolate) viewer?.setIsolated(doc.sel)
@@ -1378,6 +1530,7 @@ const SPACING = 5
 export function arrangePlate(): boolean {
   const doc = activeDoc()
   if (!doc) return false
+  pushUndo(doc, 'Arrange')
   const parts = partsOf(doc)
   doc.wrapper.updateMatrixWorld(true)
   const items = parts.map((p) => {
@@ -1439,7 +1592,7 @@ export function settleModel() {
     w.position.x += center.x - c.x
     w.position.y += center.y - c.y
     w.position.z -= box.min.z
-  })
+  }, 'Settle')
   setFixNote(
     r.tips === 0
       ? 'Already resting steadily; set down on the plate.'
@@ -1471,7 +1624,7 @@ export function autoOrient() {
     w.position.x += center.x - c.x
     w.position.y += center.y - c.y
     w.position.z -= box.min.z
-  })
+  }, 'Auto-orient')
   setFixNote(
     current
       ? `Turned to print with less support: ${cm2(current.overhang)} → ${cm2(best.overhang)} cm² overhanging, ${cm2(best.contact)} cm² on the plate.`

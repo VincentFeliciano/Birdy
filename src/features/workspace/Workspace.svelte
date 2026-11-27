@@ -3,6 +3,7 @@
   import Icon, { type IconName } from '../../components/Icon.svelte'
   import Sidebar from '../model-editor/Sidebar.svelte'
   import PreviewControls from '../slicing/PreviewControls.svelte'
+  import ToolOptions from './ToolOptions.svelte'
   import { initSlicing } from '../slicing/store.svelte'
   import { Viewer, type Tool, type ViewPreset } from '../../engine/three/viewer'
   import { fmtInt, fmtNum } from '../../app/format'
@@ -15,6 +16,8 @@
     closeModel,
     fit,
     openFromDialog,
+    redo,
+    undo,
     remember,
     reopenSaved,
     setThumbnailer,
@@ -70,6 +73,18 @@
     }
   })
 
+  // Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z) anywhere in the workspace, except while typing in a field.
+  function onWindowKey(e: KeyboardEvent) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || ws.layout === 'browse' || ws.layout === 'library') return
+    const t = e.target as HTMLElement | null
+    if (t && (t.closest('input, textarea, select, [contenteditable="true"]') || t.closest('.dlg'))) return
+    const k = e.key.toLowerCase()
+    if (k === 'z' && !e.shiftKey) undo()
+    else if (k === 'y' || (k === 'z' && e.shiftKey)) redo()
+    else return
+    e.preventDefault()
+  }
+
   function onKey(e: KeyboardEvent) {
     if (e.ctrlKey || e.metaKey || e.altKey) return
     const k = e.key.toLowerCase()
@@ -80,6 +95,8 @@
     e.preventDefault()
   }
 </script>
+
+<svelte:window onkeydown={onWindowKey} />
 
 <div class="panel neon-panel">
   <header class="head">
@@ -188,7 +205,15 @@
             <Icon name={t.icon} size={17} />
           </button>
         {/each}
+        <span class="sep"></span>
+        <button class="icon-btn" disabled={!ws.undoLabel} title={ws.undoLabel ? `Undo ${ws.undoLabel.toLowerCase()} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo" onclick={undo}>
+          <Icon name="undo" size={16} />
+        </button>
+        <button class="icon-btn" disabled={!ws.redoLabel} title={ws.redoLabel ? `Redo ${ws.redoLabel.toLowerCase()} (Ctrl+Y)` : 'Nothing to redo'} aria-label="Redo" onclick={redo}>
+          <Icon name="redo" size={16} />
+        </button>
       </div>
+      <ToolOptions />
 
       {#if ws.stats}
         <div class="hud bottom-left mono">
@@ -543,6 +568,14 @@
   .toolrail .icon-btn {
     width: 32px;
     height: 32px;
+  }
+  .toolrail .icon-btn:disabled {
+    opacity: 0.35;
+  }
+  .toolrail .sep {
+    height: 1px;
+    margin: 3px 4px;
+    background: var(--border);
   }
 
   .empty {
