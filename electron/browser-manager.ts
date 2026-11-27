@@ -1,7 +1,8 @@
 import { app, WebContentsView, type BrowserWindow, type Input, type Session, type WebContents } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { buildSearchUrl, isSearchType, type Rect, type SearchType, type TabInfo, type TabsState } from '../src/types/ipc'
+import { fileURLToPath } from 'node:url'
+import { buildSearchUrl, formatFromName, isSearchType, type Rect, type SearchType, type TabInfo, type TabsState } from '../src/types/ipc'
 import { isWebUrl } from './security'
 import { followSignInUserAgent } from './user-agent'
 
@@ -16,6 +17,8 @@ interface Options {
   startPageUrl: string
   /** Return true when the key was handled as an app shortcut. */
   onShortcut: (input: Input) => boolean
+  /** A model file was dropped onto a website. */
+  onFileDrop?: (path: string) => void
 }
 
 /** Turns address-bar text into a URL: full URLs, bare hosts, localhost, or a Google search. */
@@ -90,6 +93,16 @@ export class BrowserManager {
     wc.on('will-navigate', (e, url) => {
       if (!isWebUrl(url) && url !== this.opts.startPageUrl) {
         e.preventDefault()
+        // Dropping a file from Explorer onto a page navigates to it. No page started that (no
+        // initiator); hand model files to the workspace instead of leaving the site.
+        if (url.startsWith('file:') && e.isMainFrame && !e.initiator && this.opts.onFileDrop) {
+          try {
+            const path = fileURLToPath(url)
+            if (formatFromName(path)) this.opts.onFileDrop(path)
+          } catch {
+            // Not a local path.
+          }
+        }
         return
       }
       // The start page's search form submits ?q=…&type=…; apply the 3D search terms.

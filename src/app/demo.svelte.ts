@@ -3,6 +3,7 @@ import { importDownloads as importModelsFromDownloads, models as modelsState, op
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
 import { printCost } from './costs.svelte'
+import { commands, search, ui } from './commands.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
 import { arrangePlate, autoOrient, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, makeExposureTest, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
@@ -63,6 +64,54 @@ const issueList = () => ws.report?.issues.map((i) => i.code).join(',') ?? 'none'
 /** Dev hooks used by the `--demo` screenshot runs. */
 export function installDemo() {
   window.__demo = async () => {
+    const uiDemo = (window as unknown as { __demoUi?: string }).__demoUi
+    if (uiDemo) {
+      // Command palette, shortcuts list and drop-anywhere.
+      const [what, arg = ''] = uiDemo.split(':')
+      if (what === 'palette') {
+        await openSample()
+        ws.layout = 'split'
+        ui.palette = true
+        await new Promise((r) => setTimeout(r, 200))
+        const input = document.querySelector<HTMLInputElement>('[aria-label="Search commands"]')!
+        input.value = arg
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await new Promise((r) => setTimeout(r, 200))
+        const found = search(commands(), arg).slice(0, 5).map((c) => c.title)
+        console.log(`palette "${arg}": ${found.join(' | ')}`)
+        for (const ms of [0, 1500]) await new Promise((r) => setTimeout(r, ms)).then(() => console.log(`palette dom@${ms}: open=${ui.palette} value=${document.querySelector<HTMLInputElement>('[aria-label="Search commands"]')?.value} rows=${document.querySelectorAll('#pal-list [role=option]').length}`))
+        if (arg === 'orient') {
+          // Run the top hit with Enter and check that it acted.
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+          await new Promise((r) => setTimeout(r, 400))
+          console.log(`palette ran: open=${ui.palette} note=${ws.fixNote}`)
+        }
+      } else if (what === 'shortcuts') {
+        ws.layout = 'split'
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))
+        await new Promise((r) => setTimeout(r, 300))
+        console.log(`shortcuts open=${ui.shortcuts}`)
+      } else if (what === 'drop') {
+        ws.layout = 'browse'
+        const box = new THREE.Mesh(new THREE.BoxGeometry(20, 20, 20))
+        box.updateMatrixWorld(true)
+        const stl = exportModel(box, 'stl')
+        const dt = new DataTransfer()
+        dt.items.add(new File([stl as Uint8Array<ArrayBuffer>], 'dropped-cube.stl'))
+        if (arg !== 'hover') dt.items.add(new File(['hello'], 'notes.txt'))
+        window.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true }))
+        window.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }))
+        await new Promise((r) => setTimeout(r, 300))
+        console.log(`drop overlay=${!!document.querySelector('.dropzone')}`)
+        if (arg !== 'hover') {
+          window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }))
+          await until(() => ws.models.some((m) => m.name === 'dropped-cube.stl'), 10_000)
+          await new Promise((r) => setTimeout(r, 400))
+          console.log(`dropped: layout=${ws.layout} models=${ws.models.map((m) => m.name).join(',')} overlay=${!!document.querySelector('.dropzone')} error=${ws.error}`)
+        }
+      }
+      return
+    }
     const repairDemo = (window as unknown as { __demoRepair?: string }).__demoRepair
     if (repairDemo) {
       await openBrokenSample()

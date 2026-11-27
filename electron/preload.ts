@@ -30,6 +30,7 @@ const api: Api = {
   downloads: {
     onUpdate: (cb) => on('downloads:update', cb),
     onModelReady: (cb) => on('downloads:model-ready', cb),
+    onModelDropped: (cb) => on('files:dropped', cb),
     cancel: (id) => ipcRenderer.send('downloads:cancel', id),
     retry: (id) => ipcRenderer.send('downloads:retry', id),
     showInFolder: (id) => ipcRenderer.send('downloads:show', id),

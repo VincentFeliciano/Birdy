@@ -52,6 +52,11 @@ async function readModelFile(path: string): Promise<ModelFile> {
   return { name: basename(path), format, size, data: await readFile(path), path }
 }
 
+/** A model file the user dragged from Explorer onto a website. */
+export async function readDroppedModel(path: string): Promise<ModelFile> {
+  return readModelFile(path)
+}
+
 export async function openModelDialog(win: BrowserWindow): Promise<ModelFile | null> {
   const res = await dialog.showOpenDialog(win, {
     title: 'Open 3D model',

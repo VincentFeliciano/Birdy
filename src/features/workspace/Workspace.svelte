@@ -5,7 +5,6 @@
   import PreviewControls from '../slicing/PreviewControls.svelte'
   import { initSlicing } from '../slicing/store.svelte'
   import { Viewer, type Tool, type ViewPreset } from '../../engine/three/viewer'
-  import { formatFromName, MODEL_FORMATS } from '../../types/ipc'
   import { fmtInt, fmtNum } from '../../app/format'
   import { openSample } from '../../app/demo.svelte'
   import { onAccent } from '../../app/theme.svelte'
@@ -15,7 +14,6 @@
     attachViewer,
     closeModel,
     fit,
-    openDroppedFile,
     openFromDialog,
     remember,
     reopenSaved,
@@ -29,8 +27,6 @@
   } from './store.svelte'
 
   let host: HTMLDivElement
-  let dropActive = $state(false)
-  let dragDepth = 0
 
   const model = $derived(activeModel())
 
@@ -83,26 +79,6 @@
     else return
     e.preventDefault()
   }
-
-  function hasFiles(e: DragEvent) {
-    return e.dataTransfer?.types.includes('Files') ?? false
-  }
-
-  async function onDrop(e: DragEvent) {
-    e.preventDefault()
-    dragDepth = 0
-    dropActive = false
-    const files = [...(e.dataTransfer?.files ?? [])]
-    if (!files.length) return
-    for (const f of files) {
-      const format = formatFromName(f.name)
-      if (!format) {
-        ws.error = `${f.name} isn't a supported model. Drop ${MODEL_FORMATS.map((x) => x.toUpperCase()).join(', ')}.`
-        continue
-      }
-      await openDroppedFile(f, format)
-    }
-  }
 </script>
 
 <div class="panel neon-panel">
@@ -149,19 +125,7 @@
       class="stage"
       role="application"
       aria-label="3D model viewport"
-      ondragenter={(e) => {
-        if (!hasFiles(e)) return
-        dragDepth++
-        dropActive = true
-      }}
-      ondragleave={() => {
-        dragDepth = Math.max(0, dragDepth - 1)
-        if (dragDepth === 0) dropActive = false
-      }}
-      ondragover={(e) => {
-        if (hasFiles(e)) e.preventDefault()
-      }}
-      ondrop={onDrop}>
+>
       <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
       <div class="canvas" bind:this={host} role="application" aria-label="Viewport canvas (Q W E R tools, F fit)" tabindex="0" onkeydown={onKey}></div>
 
@@ -257,13 +221,6 @@
         <div class="overlay">
           <span class="spinner big"></span>
           <span class="mono">{ws.loading.toUpperCase()}</span>
-        </div>
-      {/if}
-
-      {#if dropActive}
-        <div class="overlay drop">
-          <Icon name="download" size={28} />
-          <span class="mono">RELEASE TO OPEN</span>
         </div>
       {/if}
 
@@ -645,12 +602,6 @@
     letter-spacing: 0.18em;
     color: var(--accent);
     text-shadow: var(--glow-text);
-  }
-  .overlay.drop {
-    border: 2px dashed var(--neon-line);
-    border-radius: 10px;
-    margin: 6px;
-    box-shadow: inset 0 0 40px rgba(var(--accent-rgb), 0.15);
   }
   .spinner.big {
     width: 32px;

@@ -10,7 +10,7 @@ import { checkForUpdates, downloadUpdate, getUpdateState, installUpdate, setupUp
 import { Library } from './library'
 import { chooseSlicer, listSlicers, openInSlicer, setDefaultSlicer } from './slicer-launcher'
 import { DownloadManager } from './download-manager'
-import { openModelDialog, reopenSaved, saveModel, workspaceDirs } from './file-system'
+import { openModelDialog, readDroppedModel, reopenSaved, saveModel, workspaceDirs } from './file-system'
 import { revealResinFile, saveResinFile } from './resin-save'
 import { PrintHistory } from './history'
 import { assertTrusted, isId, isRect, isShortString, setTrustedUi } from './security'
@@ -41,7 +41,7 @@ const startPageUrl = pathToFileURL(join(app.getAppPath(), 'resources', 'start.ht
 
 function sendShortcut(name: string) {
   if (!win) return
-  if (name === 'focus-address') win.webContents.focus()
+  if (name === 'focus-address' || name === 'palette' || name === 'shortcuts') win.webContents.focus()
   win.webContents.send('app:shortcut', name)
 }
 
@@ -68,6 +68,8 @@ function handleShortcut(input: Input): boolean {
   else if (ctrl && k === '0') wc?.setZoomLevel(0)
   else if (ctrl && k === 'e') sendShortcut('toggle-workspace')
   else if (ctrl && k === 'o') sendShortcut('open-model')
+  else if (ctrl && !input.shift && k === 'k') sendShortcut('palette')
+  else if ((ctrl && k === '/') || k === 'f1') sendShortcut('shortcuts')
   else if (k === 'f12') wc?.openDevTools({ mode: 'detach' })
   else if (k === 'f11') win.setFullScreen(!win.isFullScreen())
   else return false
@@ -119,7 +121,16 @@ function createWindow() {
     if (handleShortcut(input)) e.preventDefault()
   })
 
-  browser = new BrowserManager(win, { session: browserSession, startPageUrl, onShortcut: handleShortcut })
+  browser = new BrowserManager(win, {
+    session: browserSession,
+    startPageUrl,
+    onShortcut: handleShortcut,
+    onFileDrop: (path) => {
+      readDroppedModel(path)
+        .then((file) => win?.webContents.send('files:dropped', file))
+        .catch((err: Error) => console.warn(`drop: ${err.message}`))
+    },
+  })
   models = new ModelsManager(win, dirs.models)
   history = new PrintHistory(win)
   const modelsRef = models
@@ -316,6 +327,8 @@ function maybeScreenshot() {
       if (historyDemo) await win.webContents.executeJavaScript(`window.__demoHistory = ${JSON.stringify(historyDemo)}`)
       const barDemo = process.argv.find((a) => a.startsWith('--demo-bar='))?.slice('--demo-bar='.length)
       if (barDemo) await win.webContents.executeJavaScript(`window.__demoBar = ${JSON.stringify(barDemo)}`)
+      const uiDemo = process.argv.find((a) => a.startsWith('--demo-ui='))?.slice('--demo-ui='.length)
+      if (uiDemo) await win.webContents.executeJavaScript(`window.__demoUi = ${JSON.stringify(uiDemo)}`)
       if (process.argv.includes('--demo-orient')) await win.webContents.executeJavaScript('window.__demoOrient = true')
       const plateDemo = process.argv.find((a) => a.startsWith('--demo-plate='))?.slice('--demo-plate='.length)
       if (plateDemo) await win.webContents.executeJavaScript(`window.__demoPlate = ${JSON.stringify(plateDemo)}`)

@@ -9,7 +9,11 @@
   import LibraryView from '../features/file-library/LibraryView.svelte'
   import { initLibrary } from '../stores/library.svelte'
   import { downloads, focusAddress, initStores } from '../stores/browser.svelte'
-  import { openFromDialog, openFromDownload, remember, toggleWorkspace, ws } from '../features/workspace/store.svelte'
+  import { openDroppedFiles, openFromDialog, openFromDownload, openModelFile, remember, toggleWorkspace, ws } from '../features/workspace/store.svelte'
+  import CommandPalette from './CommandPalette.svelte'
+  import ShortcutsOverlay from './ShortcutsOverlay.svelte'
+  import Icon from '../components/Icon.svelte'
+  import { ui } from './commands.svelte'
   import { installDemo } from './demo.svelte'
   import { applyAccent, theme } from './theme.svelte'
   import ThemePanel from './ThemePanel.svelte'
@@ -21,15 +25,62 @@
   import { initUpdates, stripVisible } from './updates.svelte'
 
   let dragging = $state(false)
+  // Files dragged in from Explorer: the whole window becomes a drop target.
+  let fileDrag = $state(false)
+  let dragDepth = 0
+  const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false
+
+  function onDragEnter(e: DragEvent) {
+    if (!hasFiles(e)) return
+    dragDepth++
+    fileDrag = true
+  }
+  function onDragLeave(e: DragEvent) {
+    if (!hasFiles(e)) return
+    dragDepth = Math.max(0, dragDepth - 1)
+    if (!dragDepth) fileDrag = false
+  }
+  function onDragOver(e: DragEvent) {
+    if (!hasFiles(e)) return
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  }
+  function onDrop(e: DragEvent) {
+    if (!hasFiles(e)) return
+    e.preventDefault()
+    dragDepth = 0
+    fileDrag = false
+    void openDroppedFiles([...(e.dataTransfer?.files ?? [])])
+  }
+
+  /** "?" opens the shortcuts list, unless the user is typing. */
+  function onKey(e: KeyboardEvent) {
+    if (e.key !== '?' || e.ctrlKey || e.altKey || e.metaKey || ui.palette) return
+    const t = e.target as HTMLElement | null
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+    e.preventDefault()
+    ui.shortcuts = !ui.shortcuts
+  }
   let mainEl: HTMLElement
 
   onMount(() => {
     const offStores = initStores()
     const offLibrary = initLibrary()
     const offModel = window.api.downloads.onModelReady((id) => openFromDownload(id))
+    const offDropped = window.api.downloads.onModelDropped((file) => {
+      if (ws.layout === 'browse') ws.layout = 'split'
+      void openModelFile(file).catch((err: Error) => (ws.error = err.message))
+    })
     const offKeys = window.api.app.onShortcut((s) => {
       if (s === 'toggle-workspace') toggleWorkspace()
       else if (s === 'open-model') openFromDialog()
+      else if (s === 'palette') {
+        ui.shortcuts = false
+        ui.palette = !ui.palette
+      } else if (s === 'shortcuts') {
+        ui.palette = false
+        ui.shortcuts = !ui.shortcuts
+      }
       else if (s === 'focus-address') {
         if (ws.layout === 'workspace') ws.layout = 'split'
         focusAddress()
@@ -47,6 +98,7 @@
       offStores()
       offLibrary()
       offModel()
+      offDropped()
       offKeys()
       offModels()
     }
@@ -54,7 +106,7 @@
 
   // The website is a native view; hide it while resizing so the divider keeps the pointer.
   $effect(() => {
-    window.api.layout.setWebVisible((ws.layout === 'browse' || ws.layout === 'split') && !dragging)
+    window.api.layout.setWebVisible((ws.layout === 'browse' || ws.layout === 'split') && !dragging && !fileDrag && !ui.palette && !ui.shortcuts)
   })
 
   function startDrag(e: PointerEvent) {
@@ -79,6 +131,8 @@
     remember()
   }
 </script>
+
+<svelte:window ondragenter={onDragEnter} ondragleave={onDragLeave} ondragover={onDragOver} ondrop={onDrop} onkeydown={onKey} />
 
 <div class="app">
   <TopBar />
@@ -118,12 +172,27 @@
       {#if stripVisible()}
         <UpdatePanel />
       {/if}
+      {#if fileDrag}
+        <div class="dropzone" aria-hidden="true">
+          <div class="dz-inner">
+            <Icon name="download" size={34} />
+            <span class="dz-t">Drop to open in Birdy</span>
+            <span class="dz-d mono">STL · 3MF · OBJ · GLB · glTF · PLY</span>
+          </div>
+        </div>
+      {/if}
       {#if theme.panelOpen}
         <ThemePanel onclose={() => (theme.panelOpen = false)} />
       {/if}
     </div>
   </div>
 </div>
+{#if ui.palette}
+  <CommandPalette />
+{/if}
+{#if ui.shortcuts}
+  <ShortcutsOverlay />
+{/if}
 
 <style>
   .app {
@@ -137,6 +206,7 @@
     display: flex;
   }
   .stack {
+    position: relative;
     flex: 1;
     min-width: 0;
     display: flex;
@@ -198,5 +268,32 @@
   }
   .dragging {
     cursor: col-resize;
+  }
+  .dropzone {
+    position: absolute;
+    inset: 0 var(--gap) var(--gap) 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    border: 2px dashed var(--neon-line);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.55);
+    box-shadow: inset 0 0 60px rgba(var(--accent-rgb), 0.18);
+    pointer-events: none;
+  }
+  .dz-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent);
+  }
+  .dz-t {
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .dz-d {
+    font-size: 11px;
+    color: var(--muted);
   }
 </style>

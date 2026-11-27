@@ -207,7 +207,7 @@ import type {
   PrinterStatus,
 } from './slicing'
 
-export type AppShortcut = 'focus-address' | 'toggle-workspace' | 'open-model'
+export type AppShortcut = 'focus-address' | 'toggle-workspace' | 'open-model' | 'palette' | 'shortcuts'
 
 export type Unsubscribe = () => void
 
@@ -270,6 +270,8 @@ export interface Api {
   }
   downloads: {
     onUpdate(cb: (items: DownloadInfo[]) => void): Unsubscribe
+    /** A model file dropped onto a website, read by main. */
+    onModelDropped(cb: (file: ModelFile) => void): Unsubscribe
     onModelReady(cb: (id: number) => void): Unsubscribe
     cancel(id: number): void
     retry(id: number): void

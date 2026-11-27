@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { tick } from 'svelte'
-import type { ExportFormat, ModelFile, ModelFormat } from '../../types/ipc'
+import { formatFromName, MODEL_FORMATS, type ExportFormat, type ModelFile, type ModelFormat } from '../../types/ipc'
 import type { Projection, Tool, ViewPreset, Viewer } from '../../engine/three/viewer'
 import { parseModel } from '../../engine/loaders/loadModel'
 import { exportModel } from '../../engine/exporters/exportModel'
@@ -385,6 +385,22 @@ export async function openFromDownload(id: number) {
   } catch (err) {
     ws.error = (err as Error).message
   }
+}
+
+/** Files dropped anywhere in Birdy: opens each model, explains anything else. */
+export async function openDroppedFiles(files: File[]) {
+  const bad: string[] = []
+  let opened = 0
+  for (const f of files) {
+    const format = formatFromName(f.name)
+    if (!format) {
+      bad.push(f.name)
+      continue
+    }
+    if (!opened++ && (ws.layout === 'browse' || ws.layout === 'library')) ws.layout = 'workspace'
+    await openDroppedFile(f, format)
+  }
+  if (bad.length) ws.error = `${bad.join(', ')} ${bad.length > 1 ? "aren't" : "isn't a"} supported model${bad.length > 1 ? 's' : ''}. Drop ${MODEL_FORMATS.map((x) => x.toUpperCase()).join(', ')}.`
 }
 
 export async function openDroppedFile(f: File, format: ModelFormat) {

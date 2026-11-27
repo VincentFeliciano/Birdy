@@ -4,6 +4,7 @@
   import { checkNow, updates } from '../../app/updates.svelte'
   import { library } from '../../stores/library.svelte'
   import { openFromLibrary, ws } from '../workspace/store.svelte'
+  import { ui } from '../../app/commands.svelte'
   import { fmtBytes } from '../../app/format'
   import type { CheckVerdict } from '../../types/ipc'
   import HistoryList from '../history/HistoryList.svelte'
@@ -12,6 +13,12 @@
   const api = window.api
   type Tab = 'models' | 'bookmarks' | 'history' | 'about'
   let tab = $state<Tab>('models')
+  $effect(() => {
+    if (ui.libraryTab) {
+      tab = ui.libraryTab
+      ui.libraryTab = null
+    }
+  })
   let group = $state<string | null>(null) // null = all groups
   let query = $state('')
   let newGroup = $state('')
