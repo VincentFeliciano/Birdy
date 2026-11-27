@@ -89,9 +89,11 @@ function createWindow() {
   )
   installSignInHeaders(browserSession)
   // Websites get no device permissions in the MVP except fullscreen and clipboard writes.
-  browserSession.setPermissionRequestHandler((_wc, permission, cb) => {
-    cb(permission === 'fullscreen' || permission === 'clipboard-sanitized-write')
-  })
+  const allowed = (permission: string) => permission === 'fullscreen' || permission === 'clipboard-sanitized-write'
+  browserSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed(permission)))
+  // Without this, pages are told every permission (notifications and the rest) is already granted,
+  // which contradicts the refusals above and is a sign bot checks look for.
+  browserSession.setPermissionCheckHandler((_wc, permission) => allowed(permission))
 
   win = new BrowserWindow({
     width: 1480,
@@ -409,7 +411,7 @@ function maybeScreenshot() {
       if (probe && probeTab) {
         for (const u of probe.split(',')) {
           await probeTab.loadURL(u).catch(() => {})
-          const seen = await probeTab.executeJavaScript('JSON.stringify({ host: location.host, ua: navigator.userAgent, brands: navigator.userAgentData?.brands?.map((b) => b.brand) ?? null })')
+          const seen = await probeTab.executeJavaScript(`(async () => JSON.stringify({ host: location.host, ua: navigator.userAgent, brands: navigator.userAgentData?.brands?.map((b) => b.brand + '/' + b.version) ?? null, full: await navigator.userAgentData?.getHighEntropyValues?.(['fullVersionList', 'platformVersion']).catch(() => null), webdriver: navigator.webdriver, chrome: typeof window.chrome === 'object' ? Object.keys(window.chrome) : null, plugins: navigator.plugins.length, pdf: navigator.pdfViewerEnabled, langs: navigator.languages, notif: typeof Notification === 'undefined' ? null : Notification.permission, perm: await navigator.permissions.query({ name: 'notifications' }).then((r) => r.state).catch((e) => String(e)), outer: [outerWidth, outerHeight], inner: [innerWidth, innerHeight], focus: document.hasFocus(), vis: document.visibilityState, gl: (() => { const g = document.createElement('canvas').getContext('webgl'); const d = g?.getExtension('WEBGL_debug_renderer_info'); return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : null })() }))()`)
           console.log('[probe]', seen)
         }
         await new Promise((r) => setTimeout(r, 5000))

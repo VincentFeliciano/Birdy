@@ -52,8 +52,18 @@ export function followSignInUserAgent(wc: WebContents, normal: string) {
     const signIn = isSignInUrl(details.url)
     const want = signIn ? SIGN_IN_USER_AGENT : normal
     if (wc.getUserAgent() !== want) wc.setUserAgent(want)
-    // Registered once (through Chromium's DevTools protocol, not a website preload), the first time
-    // this tab opens a sign-in page; it applies to every later document in the tab.
+    // Leaving the sign-in host: drop the DevTools connection so no other site can detect it. It is
+    // only ours if we attached it (a user's open developer tools are left alone).
+    if (!signIn && scriptAdded) {
+      scriptAdded = false
+      try {
+        if (wc.debugger.isAttached()) wc.debugger.detach()
+      } catch {
+        // Already gone.
+      }
+    }
+    // Registered (through Chromium's DevTools protocol, not a website preload) when this tab opens a
+    // sign-in page; it applies to the documents that follow until the tab leaves the sign-in host.
     if (signIn && !scriptAdded) {
       scriptAdded = true
       try {

@@ -326,6 +326,19 @@ export function installDemo() {
       if (editDemo === 'smooth') { await combineParts('union'); await smoothPart(10) }
       if (editDemo === 'rebuild') { selectPart(0); await rebuildPart(0.5) }
       if (editDemo === 'fit') await splitToFit({ mode: 'smart', joiner: 'pegs', diameter: 5, clearance: 0.2 })
+      if (editDemo === 'fit-palette') {
+        // Same split, started the way a user would: Ctrl+K, type, Enter.
+        ui.palette = true
+        await new Promise((r) => setTimeout(r, 200))
+        const input = document.querySelector<HTMLInputElement>('[aria-label="Search commands"]')!
+        input.value = 'split to fit'
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await new Promise((r) => setTimeout(r, 200))
+        console.log(`edit palette top: ${search(commands(), 'split to fit')[0]?.id}`)
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+        await new Promise((r) => setTimeout(r, 400))
+        console.log(`edit palette ran: open=${ui.palette} working=${ws.working}`)
+      }
       if (editDemo === 'fit-grid') await splitToFit({ mode: 'grid', joiner: 'dowels', diameter: 5, clearance: 0.2 })
       if (editDemo === 'shapes') for (const k of ['box', 'cylinder', 'sphere', 'cone', 'pyramid', 'torus', 'tube'] as const) await addShape(k, 20)
       if (editDemo === 'text-top') { selectPart(0); await writeTextOnPart({ text: 'BIRDY', font: 'Arial', bold: true, size: 6, depth: 1.5, place: 'top', mode: 'emboss' }) }
