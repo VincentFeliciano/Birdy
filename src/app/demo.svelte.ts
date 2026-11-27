@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { importDownloads as importModelsFromDownloads, models as modelsState, openFolder as openModelsFolder, openModel as openModelsModel, setModelsOpen } from '../features/models/store.svelte'
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
-import { arrangePlate, checkNow, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
+import { arrangePlate, autoOrient, checkNow, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, makeExposureTest, pickIsland, resin, setMode as setSliceMode, sliceResinModel } from '../features/slicing/resin.svelte'
 import { chooseMachine, importFrom, installEngine, loadCatalog, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
 
@@ -92,6 +92,25 @@ export function installDemo() {
         await checkNow()
         console.log(`repair direct: ${issueList()} note=${ws.fixNote}`)
       }
+      return
+    }
+    if ((window as unknown as { __demoOrient?: boolean }).__demoOrient) {
+      // A bracket printed the hard way: an L standing on its thin edge, tipped over.
+      const parts = [new THREE.BoxGeometry(40, 20, 4).translate(0, 0, 18), new THREE.BoxGeometry(4, 20, 30).translate(-18, 0, 5)]
+      const group = new THREE.Group()
+      for (const g of parts) group.add(new THREE.Mesh(g))
+      group.rotation.set(0.4, 0.2, 0.3)
+      group.updateMatrixWorld(true)
+      const data = exportModel(group, 'stl')
+      await openModelFile({ name: 'bracket.stl', format: 'stl', size: data.byteLength, data })
+      ws.layout = 'workspace'
+      ws.sidebarTab = 'transform'
+      await until(() => !!ws.report && !ws.checking)
+      const before = ws.report?.stats.overhangPct ?? 0
+      autoOrient()
+      await new Promise((r) => setTimeout(r, 100))
+      await checkNow()
+      console.log(`orient: overhang ${before.toFixed(1)}% -> ${ws.report?.stats.overhangPct.toFixed(1)}% note=${ws.fixNote}`)
       return
     }
     const plateDemo = (window as unknown as { __demoPlate?: string }).__demoPlate

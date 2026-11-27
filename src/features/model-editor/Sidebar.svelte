@@ -12,6 +12,7 @@
   import { fmtBytes, fmtInt, fmtNum, mmToIn } from '../../app/format'
   import {
     activeModel,
+    autoOrient,
     BED,
     centerOnBed,
     checkNow,
@@ -156,6 +157,9 @@
                           <button class="ghost sm" title="Model was made in inches" onclick={() => convertUnits(25.4)}>in → mm</button>
                           <button class="ghost sm" title="Model was made in metres" onclick={() => convertUnits(1000)}>m → mm</button>
                         {:else if i.code === 'floating' || i.code === 'overhang'}
+                          {#if i.code === 'overhang'}
+                            <button class="ghost sm" title="Turn the model so it needs fewer supports" onclick={autoOrient}><Icon name="rotate" size={12} />Auto-orient</button>
+                          {/if}
                           {#if supportsOn}
                             <span class="done"><Icon name="check" size={12} />Supports on for slicing</span>
                           {:else}
@@ -298,9 +302,11 @@
             <button class="ghost" onclick={() => mirror('y')}><Icon name="mirror" size={14} />Mirror Y</button>
             <button class="ghost" onclick={() => mirror('z')}><Icon name="mirror" size={14} />Mirror Z</button>
             <button class="ghost" onclick={dropToBed}><Icon name="floor" size={14} />Drop to plate</button>
+            <button class="ghost" title="Turn the model so it needs the fewest supports" onclick={autoOrient}><Icon name="rotate" size={14} />Auto-orient</button>
             <button class="ghost" onclick={centerOnBed}><Icon name="center" size={14} />Center</button>
             <button class="ghost" onclick={resetTransform}><Icon name="reset" size={14} />Reset</button>
           </div>
+          {#if ws.fixNote}<p class="hint">{ws.fixNote}</p>{/if}
         </section>
       {/if}
     </div>

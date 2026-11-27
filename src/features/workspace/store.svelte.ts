@@ -11,6 +11,7 @@ import { describeRepair } from '../../engine/geometry/repair'
 import { defaultMaterial } from '../../engine/loaders/loadModel'
 import type { BedSize, MarkKey, PrintMarks, PrintReport } from '../../engine/geometry/printCheck'
 import { packRows } from '../../engine/geometry/arrange'
+import { rankOrientations } from '../../engine/geometry/orient'
 
 function storedBed(): BedSize {
   try {
@@ -878,4 +879,42 @@ function afterPlateChange(doc: Doc) {
     refresh()
     scheduleCheck(0)
   }
+}
+
+// ---- Auto-orient ------------------------------------------------------------------------------
+
+/**
+ * Turns the selected model so it needs the fewest supports, resting on a flat side where it has
+ * one, then stands it on the plate where it was.
+ */
+export function autoOrient() {
+  const doc = activeDoc()
+  if (!doc) return
+  const part = doc.sel
+  part.updateMatrixWorld(true)
+  const ranked = rankOrientations(worldTriangles(part).positions)
+  const best = ranked[0]
+  if (!best) return
+  const current = ranked.find((r) => r.down[2] < -0.999)
+  const down = new THREE.Vector3(...best.down)
+  const cm2 = (a: number) => (a / 100).toFixed(a < 100 ? 2 : 1)
+  if (down.z < -0.999) {
+    setFixNote(`Already the best way up (${cm2(best.overhang)} cm² overhanging).`)
+    return
+  }
+  apply((w) => {
+    const center = new THREE.Box3().setFromObject(w, true).getCenter(new THREE.Vector3())
+    w.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(down, new THREE.Vector3(0, 0, -1)))
+    w.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(w, true)
+    const c = box.getCenter(new THREE.Vector3())
+    w.position.x += center.x - c.x
+    w.position.y += center.y - c.y
+    w.position.z -= box.min.z
+  })
+  setFixNote(
+    current
+      ? `Turned to print with less support: ${cm2(current.overhang)} → ${cm2(best.overhang)} cm² overhanging, ${cm2(best.contact)} cm² on the plate.`
+      : `Turned to print with ${cm2(best.overhang)} cm² overhanging and ${cm2(best.contact)} cm² on the plate.`,
+  )
 }

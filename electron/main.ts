@@ -302,6 +302,7 @@ function maybeScreenshot() {
       const printersPort = process.argv.find((a) => a.startsWith('--demo-printers='))?.slice('--demo-printers='.length)
       if (printersPort) await win.webContents.executeJavaScript(`window.__demoPrinters = ${JSON.stringify(printersPort)}`)
       if (process.argv.includes('--demo-install')) await win.webContents.executeJavaScript('window.__demoInstall = true')
+      if (process.argv.includes('--demo-orient')) await win.webContents.executeJavaScript('window.__demoOrient = true')
       const plateDemo = process.argv.find((a) => a.startsWith('--demo-plate='))?.slice('--demo-plate='.length)
       if (plateDemo) await win.webContents.executeJavaScript(`window.__demoPlate = ${JSON.stringify(plateDemo)}`)
       const resinDemo = process.argv.find((a) => a.startsWith('--demo-resin='))?.slice('--demo-resin='.length)

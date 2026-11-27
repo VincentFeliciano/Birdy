@@ -185,10 +185,13 @@ export class Viewer {
     this.gizmo.setSize(0.85)
     this.gizmo.addEventListener('dragging-changed', (e) => {
       this.controls.enabled = !e.value
-      if (!e.value) this.onTransform?.(false)
+      if (!e.value) {
+        this.updateBBox()
+        this.onTransform?.(false)
+      }
     })
     this.gizmo.addEventListener('objectChange', () => {
-      this.updateBBox()
+      this.updateBBox(false)
       this.onTransform?.(true)
     })
     this.scene.add(this.gizmo.getHelper())
@@ -588,12 +591,13 @@ export class Viewer {
     })
   }
 
-  private updateBBox() {
+  /** Exact (every vertex) unless dragging, where the quick estimate keeps the gizmo smooth. */
+  private updateBBox(precise = true) {
     if (!this.model || !this.target || !this.showBBox || !this.model.visible) {
       this.bboxHelper.visible = false
       return
     }
-    this.bboxHelper.box.setFromObject(this.target)
+    this.bboxHelper.box.setFromObject(this.target, precise)
     this.bboxHelper.visible = !this.bboxHelper.box.isEmpty()
   }
 
