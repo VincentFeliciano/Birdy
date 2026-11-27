@@ -50,6 +50,14 @@ check from Library → About. Updates are verified against their SHA-512 before 
   PrusaLink, or **USB** (Marlin serial, with line checksums, resend handling, pause and cancel).
   API keys and passwords are encrypted with Windows' secure storage
 
+**Models folder** (`Documents\Birdy\Models`, folder button in the left rail)
+- Downloaded STL, 3MF, OBJ, GLB and PLY files are copied in; downloaded ZIPs are unpacked into a folder of
+  their own with only the model files (wrapper folders like Thingiverse's `files/` are dropped)
+- The Models panel shows folders and model thumbnails; click a model to open it in the workspace
+- Files you put in the folder yourself show up too; *Add from Downloads* brings in earlier downloads
+- ZIPs are untrusted: paths that try to escape the folder, oversized or damaged entries and
+  password-protected files are skipped and reported
+
 **Library**
 - Groups for organising bookmarks and saved models (create, rename, delete)
 - Model cards with thumbnail and print-check badge; open straight into the workspace
@@ -60,7 +68,7 @@ check from Library → About. Updates are verified against their SHA-512 before 
 npm install
 npm run dev        # run with hot reload
 npm run check      # type-check renderer and main process
-npm test           # print-check, repair, slicing, USB and user-agent tests
+npm test           # print-check, repair, slicing, USB, user-agent and models tests
 npm run dist       # build the Windows installer into release/ (never publishes)
 ```
 

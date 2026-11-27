@@ -12,6 +12,8 @@
   import { installDemo } from './demo.svelte'
   import { applyAccent, theme } from './theme.svelte'
   import ThemePanel from './ThemePanel.svelte'
+  import ModelsPanel from '../features/models/ModelsPanel.svelte'
+  import { initModels, models } from '../features/models/store.svelte'
   import UpdatePanel from './UpdatePanel.svelte'
   import { initUpdates, stripVisible } from './updates.svelte'
 
@@ -33,11 +35,13 @@
     installDemo()
     applyAccent(theme.accent)
     void initUpdates()
+    const offModels = initModels()
     return () => {
       offStores()
       offLibrary()
       offModel()
       offKeys()
+      offModels()
     }
   })
 
@@ -95,6 +99,9 @@
           <section class="lib-col"><LibraryView /></section>
         {/if}
       </main>
+      {#if models.open}
+        <ModelsPanel />
+      {/if}
       {#if downloads.open && downloads.items.length}
         <DownloadsPanel />
       {/if}

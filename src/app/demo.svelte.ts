@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { importDownloads as importModelsFromDownloads, models as modelsState, openFolder as openModelsFolder, openModel as openModelsModel, setModelsOpen } from '../features/models/store.svelte'
 import { ACCENTS, applyAccent, applyCustomAccent, theme } from './theme.svelte'
 import { exportModel } from '../engine/exporters/exportModel'
 import { checkNow, openModelFile, repairActive, setXForm, ws } from '../features/workspace/store.svelte'
@@ -122,6 +123,19 @@ export function installDemo() {
     if (a) applyAccent(a)
     else if (/^#[0-9a-f]{6}$/i.test(id)) applyCustomAccent(id)
     theme.panelOpen = open
+  }
+  ;(window as unknown as { __models: (folder: string, open?: string) => Promise<string> }).__models = async (folder, open) => {
+    setModelsOpen(true)
+    if (folder === '!import') {
+      await importModelsFromDownloads()
+      folder = ''
+      console.log(`models import: ${modelsState.notice}`)
+    }
+    openModelsFolder(folder)
+    await until(() => !modelsState.loading && modelsState.entries.length > 0, 5000)
+    await until(() => modelsState.entries.every((e) => e.kind === 'dir' || !!modelsState.thumbs[e.rel]), 15_000)
+    if (open) await openModelsModel(open)
+    return modelsState.entries.map((e) => `${e.kind}:${e.name}${modelsState.thumbs[e.rel] ? '+thumb' : ''}`).join(', ')
   }
   window.__setLayout = (l: string) => {
     if (l === 'browse' || l === 'split' || l === 'workspace' || l === 'library') ws.layout = l

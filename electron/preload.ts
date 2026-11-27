@@ -37,6 +37,16 @@ const api: Api = {
     readModel: (id) => ipcRenderer.invoke('downloads:read-model', id),
     openFolder: () => ipcRenderer.send('downloads:open-folder'),
   },
+  models: {
+    list: (rel) => ipcRenderer.invoke('models:list', rel),
+    read: (rel) => ipcRenderer.invoke('models:read', rel),
+    reveal: (rel) => ipcRenderer.send('models:reveal', rel),
+    getThumb: (rel) => ipcRenderer.invoke('models:get-thumb', rel),
+    importDownloads: () => ipcRenderer.invoke('models:import-downloads'),
+    saveThumb: (rel, dataUrl) => ipcRenderer.send('models:save-thumb', rel, dataUrl),
+    onChanged: (cb) => on('models:changed', cb),
+    onImported: (cb) => on('models:imported', cb),
+  },
   files: {
     openModel: () => ipcRenderer.invoke('files:open-model'),
     saveModel: (req) => ipcRenderer.invoke('files:save-model', req),

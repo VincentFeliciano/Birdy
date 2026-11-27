@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { isSearchType, type NewBookmark, type NewLibraryModel, type SaveRequest, type SlicerHandoff } from '../src/types/ipc'
 import { BrowserManager } from './browser-manager'
 import { installSignInHeaders } from './user-agent'
+import { ModelsManager } from './models'
 import { checkForUpdates, downloadUpdate, getUpdateState, installUpdate, setupUpdater } from './updater'
 import { Library } from './library'
 import { chooseSlicer, listSlicers, openInSlicer, setDefaultSlicer } from './slicer-launcher'
@@ -28,6 +29,7 @@ if (!app.requestSingleInstanceLock()) app.quit()
 let win: BrowserWindow | null = null
 let browser: BrowserManager | null = null
 let downloads: DownloadManager | null = null
+let models: ModelsManager | null = null
 let library: Library | null = null
 let engine: SlicingEngine | null = null
 let serialCallback: ((portId: string) => void) | null = null
@@ -115,7 +117,9 @@ function createWindow() {
   })
 
   browser = new BrowserManager(win, { session: browserSession, startPageUrl, onShortcut: handleShortcut })
-  downloads = new DownloadManager(win, browserSession, dirs.downloads)
+  models = new ModelsManager(win, dirs.models)
+  const modelsRef = models
+  downloads = new DownloadManager(win, browserSession, dirs.downloads, (p) => modelsRef.importDownload(p))
   library = new Library(dirs.library, (d) => win?.webContents.send('library:changed', d))
   engine = new SlicingEngine((st) => win?.webContents.send('engine:state', st))
   setupSerial(win)
@@ -197,6 +201,23 @@ function registerIpc(exportsDir: string) {
 
   handle('slicer:list', async () => listSlicers())
   handle('slicer:choose', async () => (win ? chooseSlicer(win) : listSlicers()))
+  handle('models:list', async (rel) => {
+    if (!isShortString(rel, 1024) || !models) throw new Error('Bad path.')
+    return models.list(rel)
+  })
+  handle('models:read', async (rel) => {
+    if (!isShortString(rel, 1024) || !rel || !models) throw new Error('Bad path.')
+    return models.read(rel)
+  })
+  handle('models:get-thumb', async (rel) => (isShortString(rel, 1024) && models ? models.getThumb(rel) : null))
+  on('models:save-thumb', (rel, data) => {
+    if (isShortString(rel, 1024) && isShortString(data, 600_000) && models) void models.saveThumb(rel, data).catch(() => {})
+  })
+  handle('models:import-downloads', async () => {
+    if (!models || !downloads) throw new Error('Unavailable.')
+    return models.importFolder(downloads.dir)
+  })
+  on('models:reveal', (rel) => isShortString(rel, 1024) && models?.reveal(rel))
   handle('update:get', async () => getUpdateState())
   handle('update:check', async () => checkForUpdates())
   handle('update:download', async () => downloadUpdate())
@@ -298,6 +319,11 @@ function maybeScreenshot() {
           console.log(`[update] download: ${done.status} ${done.version ?? ''} ${done.error ?? ''}`)
         }
       }
+      const modelsArg = process.argv.find((a) => a.startsWith('--models='))?.slice('--models='.length)
+      if (modelsArg) {
+        const [folder, open] = modelsArg.split('|')
+        console.log('[models]', await win.webContents.executeJavaScript(`window.__models?.(${JSON.stringify(folder)}, ${JSON.stringify(open ?? '')})`))
+      }
       const accent = process.argv.find((a) => a.startsWith('--theme='))?.slice('--theme='.length)
       if (accent) {
         await win.webContents.executeJavaScript(`window.__setTheme?.(${JSON.stringify(accent)}, true)`)
@@ -315,6 +341,7 @@ function maybeScreenshot() {
           const seen = await probeTab.executeJavaScript('JSON.stringify({ host: location.host, ua: navigator.userAgent, brands: navigator.userAgentData?.brands?.map((b) => b.brand) ?? null })')
           console.log('[probe]', seen)
         }
+        await new Promise((r) => setTimeout(r, 5000))
       }
       console.log('[state]', await win.webContents.executeJavaScript('document.querySelector(".main")?.dataset.layout + " | models=" + document.querySelectorAll(".mtab").length + " | visible=" + document.visibilityState'))
       const img = await win.webContents.capturePage()

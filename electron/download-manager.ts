@@ -5,6 +5,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { formatFromName, type DownloadInfo, type ModelFile } from '../src/types/ipc'
 import { isInside, MAX_MODEL_BYTES, sanitizeFileName } from './file-system'
+import { isArchiveName, type ImportResult } from './models-import'
 
 interface Entry {
   info: DownloadInfo
@@ -44,6 +45,8 @@ export class DownloadManager {
     private win: BrowserWindow,
     private session: Session,
     readonly dir: string,
+    /** Copies a finished model, or unpacks a finished ZIP, into the Models folder. */
+    private importer?: (path: string) => Promise<ImportResult | null>,
   ) {
     try {
       if (existsSync(this.indexFile)) this.index = JSON.parse(readFileSync(this.indexFile, 'utf8'))
@@ -79,6 +82,9 @@ export class DownloadManager {
       state: 'progressing',
       paused: false,
       isModel: formatFromName(filename) !== null,
+      isArchive: isArchiveName(filename),
+      imported: null,
+      importNote: null,
       duplicateOf: null,
       error: null,
       startedAt: Date.now(),
@@ -99,6 +105,7 @@ export class DownloadManager {
       info.state = state
       if (state === 'interrupted') info.error = 'The download was interrupted. Check your connection and disk space, then retry.'
       if (state === 'completed') await this.finish(entry)
+      if (state === 'completed' && (info.isModel || info.isArchive)) await this.importToModels(entry)
       this.emit(true)
       if (state === 'completed' && info.isModel) this.win.webContents.send('downloads:model-ready', id)
     })
@@ -120,6 +127,19 @@ export class DownloadManager {
       }
     } catch {
       // Hashing is best effort; the file itself is already saved.
+    }
+  }
+
+  private async importToModels(entry: Entry) {
+    if (!this.importer) return
+    try {
+      const r = await this.importer(entry.savePath)
+      if (!r) return
+      if (r.models > 0) entry.info.imported = { rel: r.rel, models: r.models, kind: r.kind }
+      else if (entry.info.isArchive) entry.info.importNote = 'No 3D models inside this ZIP.'
+      if (r.skipped.length) entry.info.importNote = `${r.skipped.length} left out: ${r.skipped.slice(0, 3).join('; ')}${r.skipped.length > 3 ? '…' : ''}`
+    } catch (err) {
+      entry.info.importNote = `Couldn't unpack: ${(err as Error).message}`
     }
   }
 

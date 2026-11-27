@@ -39,10 +39,35 @@ export interface DownloadInfo {
   state: DownloadState
   paused: boolean
   isModel: boolean
+  /** A ZIP archive; its models are unpacked into the Models folder. */
+  isArchive: boolean
+  /** Where it went in the Models folder, once copied or unpacked. */
+  imported: { rel: string; models: number; kind: 'file' | 'folder' } | null
+  /** Why the ZIP could not be unpacked, or what was left out. */
+  importNote: string | null
   /** Set when identical content was already downloaded; the new copy is discarded. */
   duplicateOf: string | null
   error: string | null
   startedAt: number
+}
+
+export interface ModelsEntry {
+  name: string
+  /** Path inside the Models folder, forward slashes. */
+  rel: string
+  kind: 'dir' | 'model'
+  size: number
+  mtime: number
+  models?: number
+}
+
+export interface ModelsImport {
+  kind: 'file' | 'folder'
+  rel: string
+  models: number
+  openRel: string | null
+  existing: boolean
+  skipped: string[]
 }
 
 export interface ModelFile {
@@ -227,6 +252,18 @@ export interface Api {
     clear(): void
     readModel(id: number): Promise<ModelFile>
     openFolder(): void
+  }
+  models: {
+    list(rel: string): Promise<ModelsEntry[]>
+    read(rel: string): Promise<ModelFile>
+    /** Shows a file in Explorer, or opens the folder ('' = the Models folder). */
+    reveal(rel: string): void
+    getThumb(rel: string): Promise<string | null>
+    /** Copies models and unpacks ZIPs already in the Downloads folder. */
+    importDownloads(): Promise<{ added: number; models: number; failed: number }>
+    saveThumb(rel: string, dataUrl: string): void
+    onChanged(cb: () => void): Unsubscribe
+    onImported(cb: (r: ModelsImport) => void): Unsubscribe
   }
   files: {
     openModel(): Promise<ModelFile | null>

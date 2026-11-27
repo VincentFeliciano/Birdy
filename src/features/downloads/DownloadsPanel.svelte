@@ -2,6 +2,7 @@
   import Icon from '../../components/Icon.svelte'
   import { downloads } from '../../stores/browser.svelte'
   import { openFromDownload } from '../workspace/store.svelte'
+  import { models, openFolder, setModelsOpen } from '../models/store.svelte'
   import { fmtBytes } from '../../app/format'
   import type { DownloadInfo } from '../../types/ipc'
 
@@ -18,6 +19,15 @@
   }
 
   const items = $derived([...downloads.items].reverse())
+
+  function showImported(rel: string, kind: 'file' | 'folder') {
+    setModelsOpen(true)
+    if (kind === 'folder') openFolder(rel)
+    else {
+      openFolder(rel.split('/').slice(0, -1).join('/'))
+      models.highlight = rel
+    }
+  }
 </script>
 
 <div class="dl neon-panel" role="region" aria-label="Downloads">
@@ -31,10 +41,16 @@
   <div class="list">
     {#each items as d (d.id)}
       <div class="item" class:failed={d.state === 'interrupted' || d.state === 'cancelled'}>
-        <div class="icon" class:model={d.isModel}><Icon name={d.isModel ? 'cube' : 'download'} size={16} /></div>
+        <div class="icon" class:model={d.isModel || !!d.imported}><Icon name={d.isModel ? 'cube' : d.isArchive ? 'folder' : 'download'} size={16} /></div>
         <div class="meta">
           <div class="name" title={d.filename}>{d.filename}</div>
           <div class="status mono">{status(d)}</div>
+          {#if d.imported}
+            <button class="moved" onclick={() => showImported(d.imported!.rel, d.imported!.kind)}>
+              {d.imported.kind === 'folder' ? `Unpacked ${d.imported.models} model${d.imported.models === 1 ? '' : 's'} → Models/${d.imported.rel}` : `In Models/${d.imported.rel}`}
+            </button>
+          {/if}
+          {#if d.importNote}<div class="note" title={d.importNote}>{d.importNote}</div>{/if}
           {#if d.state === 'progressing'}
             <div class="bar"><span style="width: {d.total ? (d.received / d.total) * 100 : 30}%" class:indeterminate={!d.total}></span></div>
           {/if}
@@ -153,5 +169,30 @@
     display: flex;
     gap: 2px;
     flex: none;
+  }
+  .moved {
+    display: block;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: 11px;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  .moved:hover {
+    text-decoration: underline;
+  }
+  .note {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>

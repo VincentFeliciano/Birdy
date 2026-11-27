@@ -3,6 +3,7 @@
   import { downloads } from '../stores/browser.svelte'
   import { openFromDialog, ws, type Layout } from '../features/workspace/store.svelte'
   import { theme } from './theme.svelte'
+  import { models, setModelsOpen } from '../features/models/store.svelte'
 
   const modes: { id: Layout; icon: IconName; label: string }[] = [
     { id: 'browse', icon: 'globe', label: 'Browse' },
@@ -45,7 +46,13 @@
     <Icon name="palette" size={18} />
     <span class="swatch" style="--c: {theme.accent.hex}"></span>
   </button>
-  <button class="icon-btn" title="Open the Birdy downloads folder" aria-label="Open downloads folder" onclick={() => window.api.downloads.openFolder()}>
+  <button
+    class="icon-btn"
+    class:on={models.open}
+    title="Models: your downloaded and unpacked models"
+    aria-label="Models folder"
+    aria-expanded={models.open}
+    onclick={() => setModelsOpen(!models.open)}>
     <Icon name="folder" size={18} />
   </button>
 </nav>

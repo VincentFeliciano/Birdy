@@ -9,15 +9,18 @@ export const MAX_MODEL_BYTES = 512 * 1024 * 1024
 
 /** Root of the local workspace: Documents/Birdy/{Downloads,Exports,Library}. */
 export function workspaceDirs() {
-  const root = join(app.getPath('documents'), 'Birdy')
-  const dirs = { root, downloads: join(root, 'Downloads'), exports: join(root, 'Exports'), library: join(root, 'Library') }
+  // Development runs can work in a scratch folder instead of the real Documents/Birdy.
+  const devRoot = !app.isPackaged ? process.env['BIRDY_WORKSPACE'] : undefined
+  const root = devRoot || join(app.getPath('documents'), 'Birdy')
+  const dirs = { root, downloads: join(root, 'Downloads'), exports: join(root, 'Exports'), library: join(root, 'Library'), models: join(root, 'Models') }
   try {
     mkdirSync(dirs.downloads, { recursive: true })
     mkdirSync(dirs.exports, { recursive: true })
     mkdirSync(dirs.library, { recursive: true })
+    mkdirSync(dirs.models, { recursive: true })
   } catch {
     const fallback = app.getPath('downloads')
-    return { root: fallback, downloads: fallback, exports: fallback, library: fallback }
+    return { root: fallback, downloads: fallback, exports: fallback, library: fallback, models: join(fallback, 'Birdy Models') }
   }
   return dirs
 }
