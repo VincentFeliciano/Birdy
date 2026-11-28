@@ -3,7 +3,7 @@
   import Icon from '../../components/Icon.svelte'
   import { fmtBytes } from '../../app/format'
   import { isFdmKind } from '../../types/slicing'
-  import type { BrimType, PresetRef, SkirtMode, SupportMode } from '../../types/slicing'
+  import type { BrimType, PresetRef, SkirtMode, SliceOverrides, SupportMode } from '../../types/slicing'
   import { fitsMachine } from '../../../electron/slicing/presets'
   import PrinterManager from './PrinterManager.svelte'
   import PricesEditor from '../../components/PricesEditor.svelte'
@@ -78,6 +78,7 @@
   const hasOverrides = $derived(Object.keys(o).length > 0)
   const extraCount = $derived(Object.keys(o.extra ?? {}).length)
   const brimType = $derived<BrimType | undefined>(o.brimType ?? (o.brim === undefined ? undefined : o.brim ? 'outer' : 'none'))
+  type NumKey = { [K in keyof SliceOverrides]-?: NonNullable<SliceOverrides[K]> extends number ? K : never }[keyof SliceOverrides]
   function setBrim(t: BrimType | undefined) {
     setOverride('brim', undefined)
     setOverride('brimType', t)
@@ -92,6 +93,13 @@
   const usbPct = $derived(usb.total ? usb.sent / usb.total : 0)
   const kindLabel = { octoprint: 'OctoPrint', moonraker: 'Klipper / Moonraker', prusalink: 'PrusaLink', serial: 'USB cable', elegoo: 'Elegoo Wi-Fi', flashforge: 'Flashforge Wi-Fi' } as const
 </script>
+
+{#snippet nf(key: NumKey, label: string, unit: string, min: number, max: number, step: number, title = '')}
+  <label class="field" title={title || undefined}>
+    <span>{label} <i>{unit}</i></span>
+    <input type="number" {min} {max} {step} placeholder="preset" value={o[key] ?? ''} onchange={(e) => setOverride(key, num(e))} />
+  </label>
+{/snippet}
 
 {#if sl.managePrinters}
   <PrinterManager />
@@ -323,6 +331,61 @@
               <input type="number" min="100" max="50000" step="100" placeholder="preset" value={o.acceleration ?? ''} onchange={(e) => setOverride('acceleration', num(e))} />
             </label>
           </div>
+          <details class="more">
+            <summary>Fine tuning: more speeds, acceleration, jerk and smoothing</summary>
+            <h5 class="mini-head">More speeds</h5>
+            <div class="grid2">
+              {@render nf('speedBridge', 'Bridges', 'mm/s', 5, 300, 5)}
+              {@render nf('speedGapFill', 'Gap fill', 'mm/s', 5, 300, 5)}
+              {@render nf('speedSupport', 'Supports', 'mm/s', 5, 300, 5)}
+              {@render nf('speedSupportInterface', 'Support top', 'mm/s', 5, 300, 5, 'Where the support touches the model')}
+              <label class="field" title="Holes and thin posts. A number is mm/s; with % it is that share of the outer wall speed.">
+                <span>Small perimeters <i>mm/s or %</i></span>
+                <input type="text" placeholder="preset" value={o.speedSmallPerimeter ?? ''} onchange={(e) => setOverride('speedSmallPerimeter', e.currentTarget.value.trim() || undefined)} />
+              </label>
+              {@render nf('speedFirstLayerTravel', 'First-layer travel', 'mm/s', 10, 500, 10)}
+              <label class="field" title="Print overhangs slower, more as they get steeper, so they curl less">
+                <span>Slow on overhangs</span>
+                <select value={o.slowOverhangs === undefined ? '' : o.slowOverhangs ? 'on' : 'off'} onchange={(e) => setOverride('slowOverhangs', e.currentTarget.value === '' ? undefined : e.currentTarget.value === 'on')}>
+                  <option value="">Preset</option>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+            </div>
+            <h5 class="mini-head">Acceleration per move <i>mm/s²</i></h5>
+            <div class="grid2">
+              {@render nf('accelOuterWall', 'Outer wall', 'mm/s²', 100, 50000, 100, 'Lower gives a smoother outside with less ringing')}
+              {@render nf('accelInnerWall', 'Inner walls', 'mm/s²', 100, 50000, 100)}
+              {@render nf('accelTop', 'Top surface', 'mm/s²', 100, 50000, 100)}
+              {@render nf('accelInfill', 'Infill', 'mm/s²', 100, 50000, 100)}
+              {@render nf('accelBridge', 'Bridges', 'mm/s²', 100, 50000, 100)}
+              {@render nf('accelTravel', 'Travel', 'mm/s²', 100, 50000, 100)}
+              {@render nf('accelFirstLayer', 'First layer', 'mm/s²', 100, 50000, 100)}
+            </div>
+            <h5 class="mini-head">Jerk and smoothing</h5>
+            <div class="grid2">
+              {@render nf('jerk', 'Jerk, all moves', 'mm/s', 0, 50, 1, 'How fast the printer may change direction without slowing (Marlin, RepRapFirmware). Lower is smoother; 0 leaves the printer its own.')}
+              {@render nf('jerkOuterWall', 'Jerk, outer wall', 'mm/s', 0, 50, 1)}
+              {@render nf('junctionDeviation', 'Junction deviation', 'mm', 0, 0.3, 0.005, 'For printers set to Marlin 2 firmware (older Marlin uses jerk instead). Smaller rounds corners more gently; typical 0.01–0.08. 0 leaves the printer its own.')}
+              {@render nf('accelToDecel', 'Accel to decel (Klipper)', '%', 0, 100, 5, 'Klipper max_accel_to_decel as a share of the acceleration: lower means smoother, slower corners. 0 turns it off.')}
+            </div>
+            <h5 class="mini-head">Flow and cooling</h5>
+            <div class="grid2">
+              {@render nf('maxFlow', 'Max flow', 'mm³/s', 1, 100, 0.5, 'The most plastic the hotend can melt. Every speed is capped to stay under it. Stock hotends: about 10–15 for PLA.')}
+              {@render nf('pressureAdvance', 'Pressure advance', 'K', 0, 2, 0.005, 'Linear/pressure advance factor for sharper corners. Bowden: about 0.3–1.0; direct drive: 0.02–0.1. 0 turns it off.')}
+              <label class="field" title="Slow down small layers so each one has time to cool">
+                <span>Slow for cooling</span>
+                <select value={o.coolingSlowdown === undefined ? '' : o.coolingSlowdown ? 'on' : 'off'} onchange={(e) => setOverride('coolingSlowdown', e.currentTarget.value === '' ? undefined : e.currentTarget.value === 'on')}>
+                  <option value="">Preset</option>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+              {@render nf('minLayerTime', 'Min layer time', 's', 0, 120, 1)}
+              {@render nf('minSpeed', 'Slowest allowed', 'mm/s', 1, 100, 1, 'Cooling never slows printing below this')}
+            </div>
+          </details>
           <h4 class="sub-head">Brim and skirt</h4>
           <div class="grid2">
             <label class="field">
@@ -747,6 +810,29 @@
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.08em;
+  }
+  .more {
+    margin: 2px 0 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .more summary {
+    cursor: pointer;
+    padding: 4px 0;
+  }
+  .more summary:hover {
+    color: var(--text);
+  }
+  .mini-head {
+    margin: 8px 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .mini-head i {
+    font-style: normal;
+    font-weight: 400;
+    color: var(--faint);
   }
   .all-btn {
     width: 100%;

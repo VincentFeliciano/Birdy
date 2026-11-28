@@ -136,10 +136,39 @@ export function overrideKeys(kind: PresetKind, o: SliceOverrides): Record<string
     speed(['top_surface_speed'], o.speedTop)
     speed(['initial_layer_speed', 'initial_layer_infill_speed'], o.speedFirstLayer)
     speed(['travel_speed'], o.speedTravel)
+    speed(['bridge_speed', 'internal_bridge_speed'], o.speedBridge)
+    speed(['gap_infill_speed'], o.speedGapFill)
+    speed(['support_speed'], o.speedSupport)
+    speed(['support_interface_speed'], o.speedSupportInterface)
+    speed(['initial_layer_travel_speed'], o.speedFirstLayerTravel)
+    if (o.speedSmallPerimeter !== undefined && /^\d{1,3}(\.\d+)?%?$/.test(o.speedSmallPerimeter.trim())) out.small_perimeter_speed = o.speedSmallPerimeter.trim()
+    if (o.slowOverhangs !== undefined) out.enable_overhang_speed = o.slowOverhangs ? '1' : '0'
+    // Acceleration: one value for everything, then any per-move ones on top.
     speed(
-      ['default_acceleration', 'outer_wall_acceleration', 'inner_wall_acceleration', 'top_surface_acceleration', 'sparse_infill_acceleration', 'internal_solid_infill_acceleration', 'initial_layer_acceleration', 'travel_acceleration'],
+      ['default_acceleration', 'outer_wall_acceleration', 'inner_wall_acceleration', 'top_surface_acceleration', 'sparse_infill_acceleration', 'internal_solid_infill_acceleration', 'bridge_acceleration', 'initial_layer_acceleration', 'travel_acceleration'],
       o.acceleration,
     )
+    speed(['outer_wall_acceleration'], o.accelOuterWall)
+    speed(['inner_wall_acceleration'], o.accelInnerWall)
+    speed(['top_surface_acceleration'], o.accelTop)
+    speed(['sparse_infill_acceleration', 'internal_solid_infill_acceleration'], o.accelInfill)
+    speed(['bridge_acceleration'], o.accelBridge)
+    speed(['travel_acceleration'], o.accelTravel)
+    speed(['initial_layer_acceleration'], o.accelFirstLayer)
+    // Jerk: 0 is a real choice here (leave the printer's own), so it is written as is.
+    const jerk = (keys: string[], v: number | undefined) => {
+      if (v !== undefined && v >= 0) for (const k of keys) out[k] = num(v)
+    }
+    jerk(['default_jerk', 'outer_wall_jerk', 'inner_wall_jerk', 'top_surface_jerk', 'infill_jerk', 'travel_jerk', 'initial_layer_jerk'], o.jerk)
+    jerk(['outer_wall_jerk'], o.jerkOuterWall)
+    if (o.junctionDeviation !== undefined && o.junctionDeviation >= 0) out.default_junction_deviation = num(o.junctionDeviation)
+    if (o.accelToDecel !== undefined) {
+      out.accel_to_decel_enable = o.accelToDecel > 0 ? '1' : '0'
+      if (o.accelToDecel > 0) out.accel_to_decel_factor = pct(Math.min(100, o.accelToDecel))
+    }
+  } else if (kind === 'machine') {
+    // The engine caps junction deviation at the printer's maximum, so raise that to match.
+    if (o.junctionDeviation !== undefined && o.junctionDeviation > 0) out.machine_max_junction_deviation = num(o.junctionDeviation)
   } else if (kind === 'filament') {
     const p = (n: number) => [String(Math.max(0, Math.min(100, Math.round(n))))]
     if (o.coolingOff) {
@@ -166,6 +195,14 @@ export function overrideKeys(kind: PresetKind, o: SliceOverrides): Record<string
     if (o.exhaustFan !== undefined) {
       out.activate_air_filtration = [o.exhaustFan > 0 ? '1' : '0']
       out.during_print_exhaust_fan_speed = p(o.exhaustFan)
+    }
+    if (o.maxFlow !== undefined && o.maxFlow > 0) out.filament_max_volumetric_speed = [num(o.maxFlow)]
+    if (o.coolingSlowdown !== undefined) out.slow_down_for_layer_cooling = [o.coolingSlowdown ? '1' : '0']
+    if (o.minLayerTime !== undefined && o.minLayerTime >= 0) out.slow_down_layer_time = [num(o.minLayerTime)]
+    if (o.minSpeed !== undefined && o.minSpeed > 0) out.slow_down_min_speed = [num(o.minSpeed)]
+    if (o.pressureAdvance !== undefined && o.pressureAdvance >= 0) {
+      out.enable_pressure_advance = [o.pressureAdvance > 0 ? '1' : '0']
+      if (o.pressureAdvance > 0) out.pressure_advance = [num(o.pressureAdvance)]
     }
     if (o.nozzleTemp !== undefined) {
       out.nozzle_temperature = [num(o.nozzleTemp)]

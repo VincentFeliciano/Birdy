@@ -106,8 +106,39 @@ export interface SliceOverrides {
   speedTop?: number
   speedFirstLayer?: number
   speedTravel?: number
-  /** Acceleration for all moves, mm/s². */
+  speedBridge?: number
+  speedGapFill?: number
+  speedSupport?: number
+  speedSupportInterface?: number
+  /** Small perimeters (holes, thin posts): mm/s, or a percentage of the outer wall speed like "50%". */
+  speedSmallPerimeter?: string
+  speedFirstLayerTravel?: number
+  /** Slow down on overhangs, more the steeper they get. */
+  slowOverhangs?: boolean
+  /** Acceleration for all moves, mm/s². The per-move ones below win over it. */
   acceleration?: number
+  accelOuterWall?: number
+  accelInnerWall?: number
+  accelTop?: number
+  accelInfill?: number
+  accelBridge?: number
+  accelTravel?: number
+  accelFirstLayer?: number
+  /** Jerk for all moves, mm/s (Marlin, RepRapFirmware). 0 leaves the printer's own. */
+  jerk?: number
+  jerkOuterWall?: number
+  /** Marlin junction deviation, mm. Used instead of jerk when above 0. */
+  junctionDeviation?: number
+  /** Klipper: max_accel_to_decel as a % of the acceleration (smoother corners). 0 turns it off. */
+  accelToDecel?: number
+  /** Most plastic the hotend can melt, mm³/s; caps every speed. */
+  maxFlow?: number
+  /** Slow down on small layers so they cool. */
+  coolingSlowdown?: boolean
+  minLayerTime?: number
+  minSpeed?: number
+  /** Pressure advance (linear advance) factor. 0 turns it off. */
+  pressureAdvance?: number
   nozzleTemp?: number
   bedTemp?: number
   /** Turns the part-cooling fan (and the side/aux fan) off for the whole print. */

@@ -52,7 +52,7 @@
   /** Keys the quick "Adjust" fields set; those win, so they are shown but changed there. */
   const quick = $derived.by(() => {
     const { extra: _, ...o } = sl.settings.overrides
-    return { ...overrideKeys('process', o), ...overrideKeys('filament', o) } as Record<string, string | string[]>
+    return { ...overrideKeys('machine', o), ...overrideKeys('process', o), ...overrideKeys('filament', o) } as Record<string, string | string[]>
   })
 
   onMount(async () => {

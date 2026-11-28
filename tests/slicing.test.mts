@@ -141,6 +141,52 @@ test('overrides: speeds and one acceleration for every move', () => {
   assert.deepEqual(overrideKeys('filament', { speedTravel: 100 }), {})
 })
 
+test('overrides: per-move acceleration, jerk, junction deviation, Klipper smoothing, flow and cooling', () => {
+  const o = {
+    acceleration: 1000,
+    accelOuterWall: 400,
+    accelTravel: 1500,
+    jerk: 8,
+    jerkOuterWall: 5,
+    junctionDeviation: 0.02,
+    accelToDecel: 50,
+    speedBridge: 20,
+    speedSmallPerimeter: '50%',
+    slowOverhangs: true,
+    maxFlow: 12,
+    coolingSlowdown: false,
+    minLayerTime: 6,
+    minSpeed: 10,
+    pressureAdvance: 0.55,
+  }
+  const p = overrideKeys('process', o)
+  assert.equal(p.default_acceleration, '1000')
+  assert.equal(p.inner_wall_acceleration, '1000')
+  assert.equal(p.outer_wall_acceleration, '400', 'per-move wins over the overall value')
+  assert.equal(p.travel_acceleration, '1500')
+  assert.equal(p.default_jerk, '8')
+  assert.equal(p.travel_jerk, '8')
+  assert.equal(p.outer_wall_jerk, '5')
+  assert.equal(p.default_junction_deviation, '0.02')
+  assert.equal(p.accel_to_decel_enable, '1')
+  assert.equal(p.accel_to_decel_factor, '50%')
+  assert.equal(p.bridge_speed, '20')
+  assert.equal(p.small_perimeter_speed, '50%')
+  assert.equal(p.enable_overhang_speed, '1')
+  assert.deepEqual(overrideKeys('machine', o), { machine_max_junction_deviation: '0.02' })
+  const f = overrideKeys('filament', o)
+  assert.deepEqual(f.filament_max_volumetric_speed, ['12'])
+  assert.deepEqual(f.slow_down_for_layer_cooling, ['0'])
+  assert.deepEqual(f.slow_down_layer_time, ['6'])
+  assert.deepEqual(f.slow_down_min_speed, ['10'])
+  assert.deepEqual(f.enable_pressure_advance, ['1'])
+  assert.deepEqual(f.pressure_advance, ['0.55'])
+  assert.deepEqual(overrideKeys('filament', { pressureAdvance: 0 }), { enable_pressure_advance: ['0'] })
+  assert.deepEqual(overrideKeys('process', { accelToDecel: 0 }), { accel_to_decel_enable: '0' })
+  assert.equal(overrideKeys('process', { speedSmallPerimeter: 'fast' }).small_perimeter_speed, undefined, 'only numbers or percentages')
+  assert.equal(overrideKeys('process', { jerk: 0 }).default_jerk, '0')
+})
+
 test('the Mega X ships gentler than the i3 Mega S it is built on', () => {
   assert.ok(BUILTIN_REV >= 2)
   const std = BUILTIN_PRESETS.find((b) => b.json.name === '0.20mm Standard @Anycubic Mega X 0.4 nozzle')!.json
