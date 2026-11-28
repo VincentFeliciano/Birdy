@@ -137,7 +137,7 @@
 
   // The website is a native view; hide it while resizing so the divider keeps the pointer.
   $effect(() => {
-    window.api.layout.setWebVisible((ws.layout === 'browse' || ws.layout === 'split') && !dragging && !fileDrag && !ui.palette && !ui.shortcuts && !ui.tour && !ui.settings && !sl.editor)
+    window.api.layout.setWebVisible((ws.layout === 'browse' || ws.layout === 'split') && !dragging && !fileDrag && !ui.palette && !ui.shortcuts && !ui.tour && !ui.settings && !sl.editor && !sl.allSettings)
   })
 
   function startDrag(e: PointerEvent) {
