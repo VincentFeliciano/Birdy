@@ -522,7 +522,9 @@ export class SlicingEngine {
     const dest = /\.(gcode|gco|g)$/i.test(target) ? target : `${target}.gcode`
     // Any failure is reported to the user, never thrown away.
     try {
-      await mkdir(dirname(dest), { recursive: true })
+      // Only create a missing folder: Windows refuses mkdir on a drive root ("K:\\", a USB stick)
+      // with EPERM even though it exists and is writable.
+      if (!existsSync(dirname(dest))) await mkdir(dirname(dest), { recursive: true })
       await copyWithRetry(src, dest)
       const [a, b] = await Promise.all([stat(src), stat(dest)])
       if (a.size !== b.size) return { ok: false, error: 'The saved file could not be verified.' }
