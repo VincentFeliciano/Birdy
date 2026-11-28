@@ -1,7 +1,7 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte'
   import { fmtBytes } from '../../app/format'
-  import { addModelToPlate, browseFolder, isElsewhere, openArchive, sliceModel, crumbs, importDownloads, isFav, models, openFolder, openModel, refresh, setFavsOnly, setModelsOpen, setQuery, showInFolder, shown, toggleFav, up } from './store.svelte'
+  import { addModelToPlate, browseFolder, deleteEntry, isElsewhere, openArchive, sliceModel, crumbs, importDownloads, isFav, models, openFolder, openModel, refresh, setFavsOnly, setModelsOpen, setQuery, showInFolder, shown, toggleFav, up } from './store.svelte'
 
   const api = window.api
   const path = $derived(crumbs())
@@ -142,6 +142,11 @@
         <button class="reveal icon-btn" title="Show in File Explorer" aria-label="Show {e.name} in File Explorer" onclick={() => api.models.reveal(e.rel)}>
           <Icon name="external" size={12} />
         </button>
+        {#if !(e.kind === 'dir' && elsewhere)}
+          <button class="del icon-btn" title="Delete (moves it to the Recycle Bin)" aria-label="Delete {e.name}" onclick={() => deleteEntry(e)}>
+            <Icon name="trash" size={12} />
+          </button>
+        {/if}
       </div>
     {/each}
   </div>
@@ -421,6 +426,20 @@
   .acts:focus-within {
     opacity: 1;
   }
+  .del {
+    position: absolute;
+    top: 9px;
+    right: 35px;
+    width: 22px;
+    height: 22px;
+    opacity: 0;
+    background: rgba(11, 12, 15, 0.8);
+  }
+  .del:hover {
+    color: #ff5a6a;
+  }
+  .tile:hover .del,
+  .del:focus-visible,
   .tile:hover .reveal,
   .reveal:focus-visible {
     opacity: 1;

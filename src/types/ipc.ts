@@ -321,6 +321,8 @@ export interface Api {
     pickFolder(): Promise<string | null>
     /** Unpacks a ZIP from anywhere into the Models folder (shown like a finished download). */
     importArchive(rel: string): Promise<void>
+    /** Asks, then moves a model, ZIP or Models subfolder to the Recycle Bin; false if cancelled. */
+    trash(rel: string): Promise<boolean>
   }
   files: {
     openModel(): Promise<ModelFile | null>

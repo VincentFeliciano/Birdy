@@ -308,6 +308,14 @@ export function installDemo() {
         await openZipFromPanel(zip.rel)
         await new Promise((r) => setTimeout(r, 1500))
         console.log(`explorer zip: cwd=${modelsState.cwd} notice=${modelsState.notice} parts=${ws.parts.length}`)
+      } else if (action === 'delete') {
+        const before = modelsState.entries.map((e) => e.name).join(',')
+        const del = [...document.querySelectorAll<HTMLButtonElement>('.del')]
+        console.log(`explorer delete buttons: ${del.length}`)
+        ;[...document.querySelectorAll<HTMLButtonElement>('.del')].find((b) => b.getAttribute('aria-label') === `Delete ${model.name}`)!.click()
+        await new Promise((r) => setTimeout(r, 1500))
+        console.log(`explorer delete: before=${before} after=${modelsState.entries.map((e) => e.name).join(',')} notice=${modelsState.notice}`)
+        ;(document.querySelector('.tile') as HTMLElement | null)?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
       } else {
         await new Promise((r) => setTimeout(r, 800))
       }

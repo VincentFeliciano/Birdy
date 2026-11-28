@@ -92,7 +92,8 @@ export const ws = $state({
   activeId: null as string | null,
   tool: 'move' as Tool,
   /** Whether the active tool's options panel (beside the tool rail) is open. */
-  toolPanel: true,
+  // Closed until the user clicks a tool button (or presses its key); adding a model never opens it.
+  toolPanel: false,
   /** Unit for typing real-life sizes (the model itself is always in mm). */
   sizeUnit: loadSizeUnit(),
   projection: 'perspective' as Projection,

@@ -271,6 +271,10 @@ function registerIpc(exportsDir: string) {
     if (!isShortString(rel, 1024) || !models) throw new Error('Bad path.')
     return models.importArchive(rel)
   })
+  handle('models:trash', async (rel) => {
+    if (!isShortString(rel, 1024) || !models) throw new Error('Bad path.')
+    return models.trash(rel)
+  })
   handle('models:search', async (q) => (isShortString(q, 200) && models ? models.search(q) : []))
   handle('models:lookup', async (rels) =>
     Array.isArray(rels) && models ? models.lookup(rels.filter((r): r is string => isShortString(r, 1024)).slice(0, 500)) : [],

@@ -128,6 +128,34 @@ export class ModelsManager {
     else void shell.openPath(full)
   }
 
+  /**
+   * Moves a model, ZIP or folder to the Recycle Bin after the user confirms, so it can be restored.
+   * Folders only inside the Models folder: elsewhere on the PC just model files and ZIPs.
+   */
+  async trash(rel: string): Promise<boolean> {
+    if (!rel) throw new Error('The Models folder itself cannot be deleted.')
+    const full = this.resolve(rel)
+    const st = await stat(full)
+    const isDir = st.isDirectory()
+    if (isDir && isAbsRel(rel)) throw new Error('Only folders inside the Models folder can be deleted here.')
+    if (!isDir && !(st.isFile() && (formatFromName(full) || isArchiveName(full)))) throw new Error('Only 3D models, ZIPs and folders can be deleted here.')
+    // Dev-only test hook so a demo run can get past the question.
+    const autoYes = !app.isPackaged && process.env.BOATY_TEST_CONFIRM === '1'
+    const { response } = autoYes ? { response: 0 } : await dialog.showMessageBox(this.win, {
+      type: 'warning',
+      title: 'Delete',
+      message: `Move "${basename(full)}" to the Recycle Bin?`,
+      detail: isDir ? 'The folder and everything in it go to the Recycle Bin. You can restore them from there.' : 'You can restore it from the Recycle Bin.',
+      buttons: ['Move to Recycle Bin', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    })
+    if (response !== 0) return false
+    await shell.trashItem(full)
+    return true
+  }
+
   async importDownload(path: string): Promise<ImportResult | null> {
     const r = await importIntoModels(this.root, path)
     if (r && r.models > 0 && !this.win.isDestroyed()) this.win.webContents.send('models:imported', r)

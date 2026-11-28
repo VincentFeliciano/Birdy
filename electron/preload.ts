@@ -53,6 +53,7 @@ const api: Api = {
     places: () => ipcRenderer.invoke('models:places'),
     pickFolder: () => ipcRenderer.invoke('models:pick-folder'),
     importArchive: (rel) => ipcRenderer.invoke('models:import-archive', rel),
+    trash: (rel) => ipcRenderer.invoke('models:trash', rel),
   },
   files: {
     openModel: () => ipcRenderer.invoke('files:open-model'),

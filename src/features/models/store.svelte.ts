@@ -145,6 +145,22 @@ export async function browseFolder() {
   if (rel) openFolder(rel)
 }
 
+/** Moves a model, ZIP or folder to the Recycle Bin (main asks first), then updates the list. */
+export async function deleteEntry(e: ModelsEntry) {
+  try {
+    if (!(await window.api.models.trash(e.rel))) return
+  } catch (err) {
+    models.notice = `Couldn't delete ${e.name}: ${(err as Error).message}`
+    return
+  }
+  models.entries = models.entries.filter((x) => x.rel !== e.rel)
+  models.results = models.results.filter((x) => x.rel !== e.rel)
+  if (models.favs.includes(e.rel)) toggleFav(e.rel)
+  models.notice = `Moved ${e.name} to the Recycle Bin.`
+  void refresh()
+  if (models.query.trim() || models.favsOnly) void refreshResults()
+}
+
 /** Unpacks a ZIP found elsewhere on the PC into the Models folder, then shows it there. */
 export async function openArchive(rel: string) {
   models.opening = rel
