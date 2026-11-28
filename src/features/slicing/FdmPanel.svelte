@@ -300,7 +300,24 @@
             </label>
           </div>
           <h4 class="sub-head">Speeds</h4>
-          <p class="hint">Older or wobbly printers print cleaner when slowed down. Blank keeps the preset's speed.</p>
+          <p class="hint">Older or wobbly printers print cleaner when slowed down. Blank keeps the preset's value.</p>
+          <details class="more units">
+            <summary>What do mm/s and mm/s² mean?</summary>
+            <dl>
+              <dt>Speed <i>mm/s</i></dt>
+              <dd>How fast the nozzle moves while printing: millimetres per second. Outer walls 25–50 on older printers, up to 200+ on fast ones.</dd>
+              <dt>Acceleration <i>mm/s²</i></dt>
+              <dd>
+                How quickly the printer gets up to that speed (and slows down again): millimetres per second, every second. At 500 mm/s² it takes a
+                tenth of a second to reach 50 mm/s. Lower is gentler: less shaking, ringing and layer shifts, but short moves never reach full speed, so
+                prints take longer.
+              </dd>
+              <dd class="ranges">Big or older bed-slingers (Mega X, Ender 3): 300–1000 · Newer printers: 1000–3000 · Klipper or input shaping: 3000–20000</dd>
+              <dd>The arrows step by 50 and stop at 50; you can type any value. Below about 200 prints get very slow for little gain.</dd>
+              <dt>Jerk <i>mm/s</i></dt>
+              <dd>How much speed may change instantly at a corner without slowing down first. Lower is smoother. Marlin printers: 5–10.</dd>
+            </dl>
+          </details>
           <div class="grid2">
             <label class="field" title="The outside of the model: slower looks smoother">
               <span>Outer wall <i>mm/s</i></span>
@@ -328,7 +345,7 @@
             </label>
             <label class="field" title="How hard the printer speeds up and slows down, for every kind of move. Lower stops shaking (ringing, layer shifts) on big bed-slingers.">
               <span>Acceleration <i>mm/s²</i></span>
-              <input type="number" min="100" max="50000" step="100" placeholder="preset" value={o.acceleration ?? ''} onchange={(e) => setOverride('acceleration', num(e))} />
+              <input type="number" min="50" max="50000" step="50" placeholder="preset" value={o.acceleration ?? ''} onchange={(e) => setOverride('acceleration', num(e))} />
             </label>
           </div>
           <details class="more">
@@ -355,13 +372,13 @@
             </div>
             <h5 class="mini-head">Acceleration per move <i>mm/s²</i></h5>
             <div class="grid2">
-              {@render nf('accelOuterWall', 'Outer wall', 'mm/s²', 100, 50000, 100, 'Lower gives a smoother outside with less ringing')}
-              {@render nf('accelInnerWall', 'Inner walls', 'mm/s²', 100, 50000, 100)}
-              {@render nf('accelTop', 'Top surface', 'mm/s²', 100, 50000, 100)}
-              {@render nf('accelInfill', 'Infill', 'mm/s²', 100, 50000, 100)}
-              {@render nf('accelBridge', 'Bridges', 'mm/s²', 100, 50000, 100)}
-              {@render nf('accelTravel', 'Travel', 'mm/s²', 100, 50000, 100)}
-              {@render nf('accelFirstLayer', 'First layer', 'mm/s²', 100, 50000, 100)}
+              {@render nf('accelOuterWall', 'Outer wall', 'mm/s²', 50, 50000, 50, 'Lower gives a smoother outside with less ringing')}
+              {@render nf('accelInnerWall', 'Inner walls', 'mm/s²', 50, 50000, 50)}
+              {@render nf('accelTop', 'Top surface', 'mm/s²', 50, 50000, 50)}
+              {@render nf('accelInfill', 'Infill', 'mm/s²', 50, 50000, 50)}
+              {@render nf('accelBridge', 'Bridges', 'mm/s²', 50, 50000, 50)}
+              {@render nf('accelTravel', 'Travel', 'mm/s²', 50, 50000, 50)}
+              {@render nf('accelFirstLayer', 'First layer', 'mm/s²', 50, 50000, 50)}
             </div>
             <h5 class="mini-head">Jerk and smoothing</h5>
             <div class="grid2">
@@ -821,6 +838,27 @@
     padding: 4px 0;
   }
   .more summary:hover {
+    color: var(--text);
+  }
+  .units dl {
+    margin: 4px 0 0;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .units dt {
+    margin-top: 6px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .units dt i {
+    font-style: normal;
+    font-weight: 400;
+    color: var(--faint);
+  }
+  .units dd {
+    margin: 2px 0 0;
+  }
+  .units .ranges {
     color: var(--text);
   }
   .mini-head {
