@@ -4,6 +4,7 @@ import { digestHeader } from './digest'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { ffSend, ffStatus, ffTest, type FlashforgeTarget } from './flashforge'
 import { sdcpStart, sdcpStatus, sdcpTest, sdcpUpload } from './sdcp'
 import type { PrinterInfo, PrinterInput, PrinterKind, PrinterState, PrinterStatus, PrinterTestResult, SendResult } from '../src/types/slicing'
 
@@ -22,7 +23,7 @@ interface Stored {
   secret?: string
 }
 
-const KINDS: PrinterKind[] = ['octoprint', 'moonraker', 'prusalink', 'serial', 'elegoo']
+const KINDS: PrinterKind[] = ['octoprint', 'moonraker', 'prusalink', 'serial', 'elegoo', 'flashforge']
 const file = () => join(app.getPath('userData'), 'printers.json')
 const TIMEOUT_MS = 8000
 const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000
@@ -98,6 +99,9 @@ export function removePrinter(id: string): PrinterInfo[] {
 
 const secretOf = (p: Stored) => (p.secret ? safeStorage.decryptString(Buffer.from(p.secret, 'base64')) : '')
 
+/** A Flashforge printer: its serial number is kept as the username, its check code as the secret. */
+const ff = (p: Stored): FlashforgeTarget => ({ name: p.name, url: p.url!, serial: p.username, checkCode: secretOf(p) || undefined })
+
 function find(id: string): Stored {
   const p = load().find((x) => x.id === id)
   if (!p) throw new Error('That printer is no longer set up.')
@@ -109,6 +113,7 @@ export async function testPrinter(id: string): Promise<PrinterTestResult> {
   try {
     const p = find(id)
     if (p.kind === 'elegoo') return { ok: true, detail: await sdcpTest(p.url!) }
+    if (p.kind === 'flashforge') return { ok: true, detail: await ffTest(ff(p)) }
     if (p.kind === 'octoprint') {
       const j = (await call(p, 'GET', '/api/version')) as { text?: string; server?: string }
       return { ok: true, detail: `Connected to ${j.text ?? `OctoPrint ${j.server ?? ''}`}`.trim() }
@@ -131,6 +136,10 @@ export async function sendToPrinter(id: string, gcodePath: string, start: boolea
     if (p.kind === 'elegoo') throw new Error(`${p.name} is a resin printer. Switch Slice to Resin and send the .goo file from there.`)
     const data = await readFile(gcodePath)
     const name = basename(gcodePath).replace(/[^\w.\- ]+/g, '_')
+    if (p.kind === 'flashforge') {
+      const stored = await ffSend(ff(p), name, data, start, UPLOAD_TIMEOUT_MS)
+      return { ok: true, detail: start ? `Sent ${stored} to ${p.name} and started the print.` : `Uploaded ${stored} to ${p.name}. Start it from the printer’s screen.` }
+    }
     if (p.kind === 'octoprint') {
       const form = new FormData()
       form.append('file', new Blob([data], { type: 'application/octet-stream' }), name)
@@ -179,6 +188,7 @@ export async function printerStatus(id: string): Promise<PrinterStatus> {
   }
   try {
     if (p.kind === 'elegoo') return await sdcpStatus(p.url!)
+    if (p.kind === 'flashforge') return await ffStatus(ff(p), STATUS_TIMEOUT_MS)
     if (p.kind === 'octoprint') {
       const job = (await call(p, 'GET', '/api/job', undefined, STATUS_TIMEOUT_MS)) as {
         state?: string

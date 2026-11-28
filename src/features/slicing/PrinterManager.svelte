@@ -9,6 +9,7 @@
     { id: 'octoprint', label: 'OctoPrint', hint: 'Address of your OctoPrint (e.g. octopi.local) and an API key from its Settings → Application Keys.' },
     { id: 'moonraker', label: 'Klipper (Moonraker)', hint: 'Address of Mainsail or Fluidd (e.g. 192.168.1.50). An API key is only needed if you turned one on.' },
     { id: 'prusalink', label: 'PrusaLink', hint: 'Printer address. Use the username and password shown on the printer, or an API key on older firmware.' },
+    { id: 'flashforge', label: 'Flashforge (Wi-Fi)', hint: 'Address shown on the printer’s screen (Settings → Network), e.g. 192.168.1.70. Adventurer 5M, 5M Pro and AD5X: turn on “LAN only” mode and enter the serial number (Settings → About) and the check code it shows. Adventurer 3 / 4, Finder, Guider and other older models: leave both blank.' },
     { id: 'elegoo', label: 'Elegoo resin (Wi-Fi)', hint: 'Address shown on the printer’s screen (Settings → Network), e.g. 192.168.1.60. For Saturn 4 / Mars 5 series and other printers with Elegoo’s SDCP V3 network protocol; no key needed.' },
     { id: 'serial', label: 'USB cable', hint: 'Marlin-compatible printers connected to this PC. Boaty streams the G-code; keep it open while printing.' },
   ]
@@ -43,7 +44,7 @@
         url: editing.kind === 'serial' ? undefined : editing.url,
         // Leave the stored key alone unless something new was typed.
         secret: editing.secret ? editing.secret : undefined,
-        username: editing.kind === 'prusalink' ? editing.username : undefined,
+        username: editing.kind === 'prusalink' || editing.kind === 'flashforge' ? editing.username : undefined,
         baudRate: editing.kind === 'serial' ? editing.baudRate : undefined,
       })
       if (!sl.printerId || !sl.printers.some((p) => p.id === sl.printerId)) {
@@ -158,10 +159,16 @@
             <input type="text" spellcheck="false" autocomplete="off" bind:value={editing.username} />
           </label>
         {/if}
+        {#if editing.kind === 'flashforge'}
+          <label class="field">
+            <span>Serial number <i>(5M / AD5X only)</i></span>
+            <input type="text" spellcheck="false" autocomplete="off" placeholder="Blank for Adventurer 3 / 4 and older" bind:value={editing.username} />
+          </label>
+        {/if}
         {#if editing.kind !== 'elegoo'}
         <label class="field">
           <span>
-            {editing.kind === 'prusalink' && editing.username ? 'Password' : 'API key'}
+            {editing.kind === 'flashforge' ? 'Check code (5M / AD5X only)' : editing.kind === 'prusalink' && editing.username ? 'Password' : 'API key'}
             {#if editing.hasSecret}<i>(saved; type to replace)</i>{/if}
           </span>
           <input type="password" autocomplete="off" spellcheck="false" bind:value={editing.secret} placeholder={editing.hasSecret ? '••••••••' : ''} />

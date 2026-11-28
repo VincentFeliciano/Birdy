@@ -84,7 +84,7 @@
   const pct = (n: number) => `${Math.round(n * 100)}%`
   const fmtTime = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`)
   const usbPct = $derived(usb.total ? usb.sent / usb.total : 0)
-  const kindLabel = { octoprint: 'OctoPrint', moonraker: 'Klipper / Moonraker', prusalink: 'PrusaLink', serial: 'USB cable', elegoo: 'Elegoo Wi-Fi' } as const
+  const kindLabel = { octoprint: 'OctoPrint', moonraker: 'Klipper / Moonraker', prusalink: 'PrusaLink', serial: 'USB cable', elegoo: 'Elegoo Wi-Fi', flashforge: 'Flashforge Wi-Fi' } as const
 </script>
 
 {#if sl.managePrinters}
@@ -335,7 +335,7 @@
             {#if sl.stale}<p class="hint small">Slice again first: the model changed.</p>{/if}
             {#if sl.sendResult}<p class={sl.sendResult.ok ? 'ok' : 'err'}>{sl.sendResult.detail}</p>{/if}
           {:else}
-            <p class="hint">Add a printer on your network (OctoPrint, Klipper/Moonraker, PrusaLink) or one on a USB cable to print straight from Boaty.</p>
+            <p class="hint">Add a printer on your network (OctoPrint, Klipper/Moonraker, PrusaLink, Flashforge) or one on a USB cable to print straight from Boaty.</p>
           {/if}
         </section>
       {/if}

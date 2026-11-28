@@ -152,7 +152,7 @@ export interface ImportResult {
   error?: string
 }
 
-export type PrinterKind = 'octoprint' | 'moonraker' | 'prusalink' | 'serial' | 'elegoo'
+export type PrinterKind = 'octoprint' | 'moonraker' | 'prusalink' | 'serial' | 'elegoo' | 'flashforge'
 
 /** Printers that take G-code (the rest are resin printers). */
 export const isFdmKind = (k: PrinterKind) => k !== 'elegoo'
