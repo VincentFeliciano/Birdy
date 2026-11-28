@@ -99,6 +99,15 @@ export interface SliceOverrides {
   /** Skirt height in layers. */
   skirtHeight?: number
   raftLayers?: number
+  /** Print speeds, mm/s. */
+  speedOuterWall?: number
+  speedInnerWall?: number
+  speedInfill?: number
+  speedTop?: number
+  speedFirstLayer?: number
+  speedTravel?: number
+  /** Acceleration for all moves, mm/s². */
+  acceleration?: number
   nozzleTemp?: number
   bedTemp?: number
   /** Turns the part-cooling fan (and the side/aux fan) off for the whole print. */

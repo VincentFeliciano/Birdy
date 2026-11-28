@@ -21,6 +21,7 @@ import {
   withConfChecksum,
 } from '../electron/slicing/presets.ts'
 import { digestHeader } from '../electron/digest.ts'
+import { BUILTIN_PRESETS, BUILTIN_REV } from '../electron/slicing/builtins.ts'
 import { normalizeFeature, parseGcode } from '../src/engine/gcode/parseGcode.ts'
 import { createHash } from 'node:crypto'
 
@@ -123,6 +124,29 @@ test('overrides: support styles, brim types, skirt, draft shield and raft', () =
   assert.deepEqual(overrideKeys('process', { skirt: 'off', skirtDistance: 4 }), { skirt_loops: '0', draft_shield: 'disabled' })
   assert.deepEqual(overrideKeys('process', { raftLayers: 3 }), { raft_layers: '3' })
   assert.deepEqual(overrideKeys('filament', { raftLayers: 3, skirt: 'off' }), {})
+})
+
+test('overrides: speeds and one acceleration for every move', () => {
+  const p = overrideKeys('process', { speedOuterWall: 25, speedInnerWall: 40, speedInfill: 50, speedTop: 30, speedFirstLayer: 15, speedTravel: 100, acceleration: 600 })
+  assert.equal(p.outer_wall_speed, '25')
+  assert.equal(p.inner_wall_speed, '40')
+  assert.equal(p.sparse_infill_speed, '50')
+  assert.equal(p.internal_solid_infill_speed, '50')
+  assert.equal(p.top_surface_speed, '30')
+  assert.equal(p.initial_layer_speed, '15')
+  assert.equal(p.initial_layer_infill_speed, '15')
+  assert.equal(p.travel_speed, '100')
+  for (const k of ['default_acceleration', 'outer_wall_acceleration', 'travel_acceleration', 'initial_layer_acceleration']) assert.equal(p[k], '600', k)
+  assert.deepEqual(overrideKeys('process', { speedOuterWall: 0 }), {}, '0 is ignored, not a standstill')
+  assert.deepEqual(overrideKeys('filament', { speedTravel: 100 }), {})
+})
+
+test('the Mega X ships gentler than the i3 Mega S it is built on', () => {
+  assert.ok(BUILTIN_REV >= 2)
+  const std = BUILTIN_PRESETS.find((b) => b.json.name === '0.20mm Standard @Anycubic Mega X 0.4 nozzle')!.json
+  assert.equal(std.default_acceleration, '800')
+  assert.equal(std.initial_layer_speed, '20')
+  assert.ok(BUILTIN_PRESETS.every((b) => b.json.birdy_builtin === true && b.json.birdy_builtin_rev === BUILTIN_REV))
 })
 
 test('overrides: fans can be set or switched off entirely', () => {

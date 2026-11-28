@@ -291,6 +291,38 @@
               {#if (o.bedTemp ?? 0) > maxBed}<em class="warn">Over this bed's {maxBed} °C</em>{/if}
             </label>
           </div>
+          <h4 class="sub-head">Speeds</h4>
+          <p class="hint">Older or wobbly printers print cleaner when slowed down. Blank keeps the preset's speed.</p>
+          <div class="grid2">
+            <label class="field" title="The outside of the model: slower looks smoother">
+              <span>Outer wall <i>mm/s</i></span>
+              <input type="number" min="5" max="500" step="5" placeholder="preset" value={o.speedOuterWall ?? ''} onchange={(e) => setOverride('speedOuterWall', num(e))} />
+            </label>
+            <label class="field">
+              <span>Inner walls <i>mm/s</i></span>
+              <input type="number" min="5" max="500" step="5" placeholder="preset" value={o.speedInnerWall ?? ''} onchange={(e) => setOverride('speedInnerWall', num(e))} />
+            </label>
+            <label class="field">
+              <span>Infill <i>mm/s</i></span>
+              <input type="number" min="5" max="500" step="5" placeholder="preset" value={o.speedInfill ?? ''} onchange={(e) => setOverride('speedInfill', num(e))} />
+            </label>
+            <label class="field">
+              <span>Top surface <i>mm/s</i></span>
+              <input type="number" min="5" max="500" step="5" placeholder="preset" value={o.speedTop ?? ''} onchange={(e) => setOverride('speedTop', num(e))} />
+            </label>
+            <label class="field" title="A slow first layer sticks better">
+              <span>First layer <i>mm/s</i></span>
+              <input type="number" min="5" max="200" step="5" placeholder="preset" value={o.speedFirstLayer ?? ''} onchange={(e) => setOverride('speedFirstLayer', num(e))} />
+            </label>
+            <label class="field" title="Moves without printing">
+              <span>Travel <i>mm/s</i></span>
+              <input type="number" min="10" max="1000" step="10" placeholder="preset" value={o.speedTravel ?? ''} onchange={(e) => setOverride('speedTravel', num(e))} />
+            </label>
+            <label class="field" title="How hard the printer speeds up and slows down, for every kind of move. Lower stops shaking (ringing, layer shifts) on big bed-slingers.">
+              <span>Acceleration <i>mm/s²</i></span>
+              <input type="number" min="100" max="50000" step="100" placeholder="preset" value={o.acceleration ?? ''} onchange={(e) => setOverride('acceleration', num(e))} />
+            </label>
+          </div>
           <h4 class="sub-head">Brim and skirt</h4>
           <div class="grid2">
             <label class="field">

@@ -21,7 +21,7 @@ import type {
 } from '../../src/types/slicing'
 import { MAX_MODEL_BYTES, sanitizeFileName, workspaceDirs } from '../file-system'
 import { bedFromSettings, buildJobPreset, customPreset, parseCatalogLog, parseConfigBlock, pickFilament, pickProcess, stripConfChecksum, summarizeGcode, withConfChecksum } from './presets'
-import { BUILTIN_PRESETS } from './builtins'
+import { BUILTIN_PRESETS, BUILTIN_REV } from './builtins'
 import { gxInfoFromGcode, printerModelOf, toGx, wantsGx } from '../gx'
 
 /**
@@ -783,7 +783,10 @@ async function seedBuiltIns() {
   if (seeded) return
   seeded = true
   for (const { kind, json } of BUILTIN_PRESETS) {
-    if (!(await readImported(kind, String(json.name)))) await writeImported(kind, json)
+    const old = await readImported(kind, String(json.name))
+    // Replace an older copy Boaty wrote, unless the user has saved their own changes over it.
+    const stale = old && old.birdy_builtin === true && old.birdy_custom !== true && (Number(old.birdy_builtin_rev) || 1) < BUILTIN_REV
+    if (!old || stale) await writeImported(kind, json)
   }
 }
 

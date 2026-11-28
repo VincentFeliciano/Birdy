@@ -127,6 +127,19 @@ export function overrideKeys(kind: PresetKind, o: SliceOverrides): Record<string
       if (o.skirtHeight !== undefined) out.skirt_height = String(Math.max(1, Math.round(o.skirtHeight)))
     }
     if (o.raftLayers !== undefined) out.raft_layers = String(Math.max(0, Math.round(o.raftLayers)))
+    const speed = (keys: string[], v: number | undefined) => {
+      if (v !== undefined && v > 0) for (const k of keys) out[k] = num(v)
+    }
+    speed(['outer_wall_speed'], o.speedOuterWall)
+    speed(['inner_wall_speed'], o.speedInnerWall)
+    speed(['sparse_infill_speed', 'internal_solid_infill_speed'], o.speedInfill)
+    speed(['top_surface_speed'], o.speedTop)
+    speed(['initial_layer_speed', 'initial_layer_infill_speed'], o.speedFirstLayer)
+    speed(['travel_speed'], o.speedTravel)
+    speed(
+      ['default_acceleration', 'outer_wall_acceleration', 'inner_wall_acceleration', 'top_surface_acceleration', 'sparse_infill_acceleration', 'internal_solid_infill_acceleration', 'initial_layer_acceleration', 'travel_acceleration'],
+      o.acceleration,
+    )
   } else if (kind === 'filament') {
     const p = (n: number) => [String(Math.max(0, Math.min(100, Math.round(n))))]
     if (o.coolingOff) {
