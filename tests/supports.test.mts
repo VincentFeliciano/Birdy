@@ -86,6 +86,21 @@ test('a shelf above part of the model gets supports standing on the model', () =
   assert.ok(r.count > r.onModel)
 })
 
+test('extra island supports go under the nearest downward face, and far-off points are skipped', () => {
+  const box = geo(new BoxGeometry(10, 10, 10), [0, 0, 5])
+  const base = generateSupports(box, on)
+  const more = generateSupports(box, { ...on, extra: [{ x: 1.1, y: 0.7, dz: 0 }, { x: 1.1, y: 0.7, dz: 6 }, { x: 30, y: 30, dz: 0 }] })
+  assert.equal(more.count, base.count + 1, 'one point is on the underside; one is 6 mm away from it; one misses the model')
+})
+
+test('a fixed shaft and a thicker raft add material', () => {
+  const box = geo(new BoxGeometry(10, 10, 10), [0, 0, 5])
+  const a = generateSupports(box, on)
+  const b = generateSupports(box, { ...on, shaft: 1.5, raft: 2 })
+  assert.ok(volume(b.supports) > volume(a.supports) * 1.2, `${volume(b.supports)} vs ${volume(a.supports)}`)
+  assert.ok(Math.abs(minZ(a.supports) - minZ(b.supports)) < 0.3, 'both stand on the plate')
+})
+
 test('settings are clamped to sane ranges', () => {
   const r = generateSupports(geo(new BoxGeometry(10, 10, 10), [0, 0, 5]), { ...on, lift: 500, spacing: 0.01, tip: 9 })
   assert.equal(r.lift, 30)

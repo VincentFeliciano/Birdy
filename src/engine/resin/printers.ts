@@ -59,8 +59,27 @@ export interface ResinSettings {
   bottomLiftDistance: number
   bottomLiftSpeed: number
   retractSpeed: number
+  /**
+   * Two-stage motion (Chitubox's TSMC): after the first lift, a second lift of this many mm at its
+   * own speed; on the way back, the last `retract2Distance` mm at `retract2Speed`. 0 turns it off.
+   */
+  lift2Distance: number
+  lift2Speed: number
+  retract2Distance: number
+  retract2Speed: number
+  /** Waits (s) before the lift, at the top, and after the plate returns. */
+  restBeforeLift: number
+  restAfterLift: number
+  restAfterRetract: number
+  /** Layers after the bottom ones whose exposure steps down evenly to the normal exposure. */
+  transitionLayers: number
   /** Smooth edges with grey pixels (anti-aliasing). */
   antialias: boolean
+  /** Grey levels used for smoothing: 2, 4, 8 or 16, or 0 for every level (256). */
+  aaLevel: number
+  /** UV light power, 0–255 (255 = full), for normal and bottom layers. */
+  lightPwm: number
+  bottomLightPwm: number
   /** Mirror the layer images left-to-right. */
   mirror: boolean
   /** g/ml, for the weight estimate. */
@@ -78,20 +97,72 @@ export const DEFAULT_RESIN: ResinSettings = {
   bottomLiftDistance: 6,
   bottomLiftSpeed: 45,
   retractSpeed: 150,
+  lift2Distance: 0,
+  lift2Speed: 180,
+  retract2Distance: 0,
+  retract2Speed: 60,
+  restBeforeLift: 0,
+  restAfterLift: 0,
+  restAfterRetract: 0,
+  transitionLayers: 0,
   antialias: true,
+  aaLevel: 0,
+  lightPwm: 255,
+  bottomLightPwm: 255,
   mirror: false,
   density: 1.1,
 }
 
-/** Seconds one layer takes: exposure, light-off wait, then the lift and the return. */
-export function layerSeconds(s: ResinSettings, bottom: boolean) {
-  const exp = bottom ? s.bottomExposure : s.exposure
-  const dist = bottom ? s.bottomLiftDistance : s.liftDistance
-  const lift = bottom ? s.bottomLiftSpeed : s.liftSpeed
-  return exp + s.lightOff + (dist / Math.max(1, lift)) * 60 + (dist / Math.max(1, s.retractSpeed)) * 60
+/** Settings saved before a field existed get its default. */
+export const withResinDefaults = (s: Partial<ResinSettings>): ResinSettings => ({ ...DEFAULT_RESIN, ...s })
+
+/** Exposure (s) of layer `l` (0 = first): bottom, then the transition steps, then normal. */
+export function layerExposure(s: ResinSettings, l: number): number {
+  if (l < s.bottomLayers) return s.bottomExposure
+  const t = Math.max(0, Math.round(s.transitionLayers || 0))
+  const i = l - s.bottomLayers
+  if (i < t) return Math.round((s.bottomExposure - ((s.bottomExposure - s.exposure) * (i + 1)) / (t + 1)) * 100) / 100
+  return s.exposure
+}
+
+/** How the plate moves on one layer: both lift stages and both return stages (mm, mm/min). */
+export function layerMotion(s: ResinSettings, bottom: boolean) {
+  const lift1 = bottom ? s.bottomLiftDistance : s.liftDistance
+  const speed1 = bottom ? s.bottomLiftSpeed : s.liftSpeed
+  const lift2 = Math.max(0, s.lift2Distance || 0)
+  const total = lift1 + lift2
+  const retract2 = Math.min(total, Math.max(0, s.retract2Distance || 0))
+  return {
+    lift1,
+    speed1,
+    lift2,
+    speed2: lift2 ? s.lift2Speed : 0,
+    retract1: total - retract2,
+    retractSpeed1: s.retractSpeed,
+    retract2,
+    retractSpeed2: retract2 ? s.retract2Speed : 0,
+  }
+}
+
+/** Seconds one layer takes: exposure, waits, then the lift and the return (both stages). */
+export function layerSeconds(s: ResinSettings, bottom: boolean, exposure = bottom ? s.bottomExposure : s.exposure) {
+  const m = layerMotion(s, bottom)
+  const t = (d: number, v: number) => (d > 0 ? (d / Math.max(1, v)) * 60 : 0)
+  return (
+    exposure +
+    s.lightOff +
+    (s.restBeforeLift || 0) +
+    (s.restAfterLift || 0) +
+    (s.restAfterRetract || 0) +
+    t(m.lift1, m.speed1) +
+    t(m.lift2, m.speed2) +
+    t(m.retract1, m.retractSpeed1) +
+    t(m.retract2, m.retractSpeed2)
+  )
 }
 
 export function estimateSeconds(s: ResinSettings, layers: number) {
-  const bottom = Math.min(layers, s.bottomLayers)
-  return bottom * layerSeconds(s, true) + (layers - bottom) * layerSeconds(s, false)
+  let total = 0
+  for (let l = 0; l < layers; l++) total += layerSeconds(s, l < s.bottomLayers, layerExposure(s, l))
+  return total
 }

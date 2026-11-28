@@ -12,9 +12,26 @@ export interface SupportSettings {
   tip: number
   /** Surfaces closer than this to horizontal (degrees) get supports. */
   angle: number
+  /** Shaft diameter (mm); 0 sizes each shaft by its height. */
+  shaft: number
+  /** Raft thickness (mm). */
+  raft: number
+  /**
+   * Extra supports, e.g. under islands the last slice found: x, y in the model's coordinates and
+   * the height above the model's lowest point (mm).
+   */
+  extra?: { x: number; y: number; dz: number }[]
 }
 
-export const DEFAULT_SUPPORTS: SupportSettings = { enabled: false, lift: 5, spacing: 3, tip: 0.4, angle: 45 }
+export const DEFAULT_SUPPORTS: SupportSettings = { enabled: false, lift: 5, spacing: 3, tip: 0.4, angle: 45, shaft: 0, raft: 0.8 }
+
+/** Chitubox-style presets: how hard the supports hold, against how big a mark they leave. */
+export const SUPPORT_PRESETS = {
+  light: { label: 'Light', tip: 0.3, spacing: 3.5, shaft: 0.8 },
+  medium: { label: 'Medium', tip: 0.4, spacing: 3, shaft: 0 },
+  heavy: { label: 'Heavy', tip: 0.6, spacing: 2.5, shaft: 1.4 },
+} as const
+export type SupportPreset = keyof typeof SUPPORT_PRESETS
 
 export interface SupportResult {
   /** Model (lifted) plus supports and raft. */
@@ -31,7 +48,6 @@ export interface SupportResult {
 }
 
 const SIDES = 8
-const RAFT = 0.8
 const MAX_SUPPORTS = 6000
 /** Contact points closer than this (in XY, as a fraction of the spacing) are merged. */
 const MERGE = 0.6
@@ -198,6 +214,8 @@ export function generateSupports(model: Float32Array, s: SupportSettings, holes:
   const spacing = Math.max(1, Math.min(10, s.spacing))
   const tipR = Math.max(0.1, Math.min(1.5, s.tip)) / 2
   const cosLimit = Math.cos((Math.max(10, Math.min(80, s.angle)) * Math.PI) / 180)
+  const RAFT = Math.max(0.3, Math.min(3, s.raft || 0.8))
+  const shaftD = s.shaft > 0 ? Math.max(0.4, Math.min(3, s.shaft)) : 0
   // Raised model: its lowest point at `lift` above the plate (z = 0).
   const p = new Float32Array(model.length)
   for (let i = 0; i < model.length; i += 3) {
@@ -264,6 +282,18 @@ export function generateSupports(model: Float32Array, s: SupportSettings, holes:
       }
     }
 
+  // 3. Extra supports asked for (islands): under the downward surface nearest the given height.
+  for (const e of s.extra ?? []) {
+    if (points.length >= MAX_SUPPORTS) break
+    const want = e.dz + lift
+    const hits = cols.hits(e.x, e.y)
+    let best: { z: number; nz: number } | null = null
+    for (const h of hits) if (h.nz < 0 && (!best || Math.abs(h.z - want) < Math.abs(best.z - want))) best = h
+    if (!best || Math.abs(best.z - want) > 2) continue
+    const base = standOn(hits, best.z)
+    if (base !== null) points.push({ x: e.x, y: e.y, z: best.z, base })
+  }
+
   // Drain holes: clear them, then ring each with pins on the floor around it.
   if (holes.length) {
     const kept = points.filter((q) => holes.every((d) => Math.hypot(q.x - d.x, q.y - d.y) > d.r + tipR + 0.3))
@@ -284,7 +314,7 @@ export function generateSupports(model: Float32Array, s: SupportSettings, holes:
     }
   }
 
-  // 3. Geometry: raft, then a pin per point.
+  // 4. Geometry: raft, then a pin per point.
   const t = new Tris()
   const onRaft = points.filter((q) => q.base === 0)
   if (onRaft.length) prism(t, hull(onRaft.map((q) => [q.x, q.y]), 2.5), 0, RAFT)
@@ -292,7 +322,7 @@ export function generateSupports(model: Float32Array, s: SupportSettings, holes:
   for (const q of points) {
     const top = q.z + 0.15
     const h = top - (q.base === 0 ? RAFT : q.base)
-    const shaftR = Math.min(1.1, Math.max(tipR * 1.6, 0.45 + h * 0.012))
+    const shaftR = shaftD ? Math.max(tipR, shaftD / 2) : Math.min(1.1, Math.max(tipR * 1.6, 0.45 + h * 0.012))
     const tipLen = Math.min(2.2, h * 0.4)
     frustum(t, q.x, q.y, top - tipLen, shaftR, top, tipR)
     if (q.base === 0) {

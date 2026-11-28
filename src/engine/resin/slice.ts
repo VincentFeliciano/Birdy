@@ -2,7 +2,7 @@
 // printer's run-length encoding, a row at a time, so a 12K layer never exists as a full bitmap.
 
 import { gooHeader, GOO_ENDING, LayerEncoder, layerRecord, type HeaderInfo } from './goo.ts'
-import { estimateSeconds, type ResinPrinter, type ResinSettings } from './printers.ts'
+import { estimateSeconds, layerExposure, type ResinPrinter, type ResinSettings } from './printers.ts'
 
 export interface ResinJob {
   /** World-space, non-indexed triangles (x,y,z per vertex). */
@@ -413,7 +413,7 @@ export function sliceResin(job: ResinJob, progress?: (done: number) => boolean |
 
   for (let l = 0; l < layerCount; l++) {
     const enc = new LayerEncoder()
-    const emit = rowEmitter(enc, pr.resX, s.antialias)
+    const emit = rowEmitter(enc, pr.resX, s.antialias, s.aaLevel ?? 0)
     const inner = hollow?.inner ?? null
     cur.reset()
     raster(
@@ -496,7 +496,7 @@ export function sliceResin(job: ResinJob, progress?: (done: number) => boolean |
     ;[cur, prev] = [prev, cur]
     const image = enc.finish()
     litPixels += enc.lit
-    const record = layerRecord(s, { z: (l + 1) * h, exposure: l < s.bottomLayers ? s.bottomExposure : s.exposure, bottom: l < s.bottomLayers }, image)
+    const record = layerRecord(s, { z: (l + 1) * h, exposure: layerExposure(s, l), bottom: l < s.bottomLayers }, image)
     parts.push(record)
     bytes += record.length
     if (progress && progress(hollow ? 0.3 + ((l + 1) / layerCount) * 0.7 : (l + 1) / layerCount) === false) throw new Error('canceled')
@@ -690,7 +690,7 @@ function sortPairs(xs: Float64Array, ws: Int8Array, a: number, b: number) {
  * get a grey level matching how much of them the span covers; without, a pixel is lit when the
  * span covers its centre.
  */
-function rowEmitter(enc: LayerEncoder, width: number, aa: boolean) {
+function rowEmitter(enc: LayerEncoder, width: number, aa: boolean, levels = 0) {
   let pos = 0
   let pendPx = -1
   let pendCov = 0
@@ -700,7 +700,9 @@ function rowEmitter(enc: LayerEncoder, width: number, aa: boolean) {
   }
   const flush = () => {
     if (pendPx < 0) return
-    const v = Math.round(Math.min(1, pendCov) * 255)
+    const cov = Math.min(1, pendCov)
+    // With a set number of grey levels (Chitubox's anti-aliasing level), round to the nearest one.
+    const v = levels > 1 ? Math.round((Math.round(cov * levels) * 255) / levels) : Math.round(cov * 255)
     gapTo(pendPx)
     enc.run(1, v)
     pos = pendPx + 1

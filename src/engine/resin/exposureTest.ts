@@ -3,7 +3,7 @@
 // layer, so the pieces get different grey levels: a dimmer piece receives less light in the same time.
 
 import { gooHeader, GOO_ENDING, LayerEncoder, layerRecord } from './goo.ts'
-import { estimateSeconds, type ResinPrinter, type ResinSettings } from './printers.ts'
+import { estimateSeconds, layerExposure, type ResinPrinter, type ResinSettings } from './printers.ts'
 import type { ResinOutput } from './slice.ts'
 
 /** Share of the chosen exposure each piece gets, left to right. */
@@ -112,7 +112,7 @@ export function exposureTest(printer: ResinPrinter, settings: ResinSettings, sof
     const image = enc.finish()
     litPx += enc.lit
     const bottom = l < s.bottomLayers
-    const rec = layerRecord(s, { z: (l + 1) * s.layerHeight, exposure: bottom ? s.bottomExposure : s.exposure, bottom }, image)
+    const rec = layerRecord(s, { z: (l + 1) * s.layerHeight, exposure: layerExposure(s, l), bottom }, image)
     parts.push(rec)
     bytes += rec.length
   }

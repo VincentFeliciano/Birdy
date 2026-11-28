@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { BoxGeometry, CylinderGeometry, TorusGeometry, TorusKnotGeometry } from 'three'
 import { checksum, decodeLayer, GOO_HEADER_SIZE, LayerEncoder, readLayers } from '../src/engine/resin/goo.ts'
-import { DEFAULT_RESIN, RESIN_PRINTERS, type ResinPrinter } from '../src/engine/resin/printers.ts'
+import { DEFAULT_RESIN, estimateSeconds, layerExposure, layerMotion, RESIN_PRINTERS, withResinDefaults, type ResinPrinter } from '../src/engine/resin/printers.ts'
 import { ResinFitError, sliceResin } from '../src/engine/resin/slice.ts'
 import { exposureTest, TEST_LEVELS } from '../src/engine/resin/exposureTest.ts'
 
@@ -236,6 +236,47 @@ test('exposure test: five pieces at stepped grey levels with pins, holes and cou
   // Base layers are solid at full brightness.
   const base = image(file, 5).px
   assert.equal(base[200 * 1200 + c0 + 50], 255)
+})
+
+test('transition layers step the exposure down from bottom to normal', () => {
+  const s = { ...binary, bottomLayers: 2, bottomExposure: 30, exposure: 2, transitionLayers: 3 }
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6].map((l) => layerExposure(s, l)), [30, 30, 23, 16, 9, 2, 2])
+  assert.deepEqual([1, 2, 3].map((l) => layerExposure({ ...s, transitionLayers: 0 }, l)), [30, 2, 2])
+  const r = sliceResin({ positions: geo(new BoxGeometry(4, 4, 1), [0, 0, 0.5]), printer: tiny, settings: s, softwareVersion: 't' })
+  const { layers } = readLayers(join(r.parts))
+  assert.deepEqual(layers.slice(0, 7).map((l) => Math.round(l.exposure)), [30, 30, 23, 16, 9, 2, 2], 'written into each layer')
+})
+
+test('two-stage lift: the slow stage then the fast one, and the return mirrors it', () => {
+  const s = { ...binary, liftDistance: 2, liftSpeed: 60, lift2Distance: 4, lift2Speed: 300, retract2Distance: 1.5, retract2Speed: 50 }
+  const m = layerMotion(s, false)
+  assert.equal(m.lift1 + m.lift2, 6)
+  assert.equal(m.retract1 + m.retract2, 6, 'comes back as far as it went up')
+  assert.equal(m.retract2, 1.5)
+  assert.equal(m.speed2, 300)
+  const single = layerMotion(binary, false)
+  assert.equal(single.lift2, 0)
+  assert.equal(single.retract2, 0)
+  assert.equal(single.retract1, binary.liftDistance)
+  // Waits make each layer longer by exactly their sum.
+  const waits = { ...binary, restBeforeLift: 1, restAfterLift: 2, restAfterRetract: 0.5 }
+  assert.ok(Math.abs(estimateSeconds(waits, 10) - estimateSeconds(binary, 10) - 35) < 1e-6)
+  // Old saved settings without the new fields get defaults.
+  const old = withResinDefaults({ exposure: 3 })
+  assert.equal(old.lightPwm, 255)
+  assert.equal(old.transitionLayers, 0)
+})
+
+test('anti-aliasing levels limit the grey steps', () => {
+  const pos = geo(new CylinderGeometry(5, 5, 4, 96).rotateX(Math.PI / 2))
+  const greys = (aaLevel: number) => {
+    const r = sliceResin({ positions: pos, printer: tiny, settings: { ...binary, antialias: true, aaLevel }, softwareVersion: 'test' })
+    return new Set(image(join(r.parts), 20).px)
+  }
+  const four = greys(4)
+  assert.ok([...four].every((v) => [0, 64, 128, 191, 255].includes(v)), `levels ${[...four]}`)
+  assert.ok(four.size > 2, 'still has grey edges')
+  assert.ok(greys(0).size > four.size, 'full keeps more steps')
 })
 
 test('a 12K knot slices in reasonable time', () => {

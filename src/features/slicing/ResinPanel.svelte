@@ -7,6 +7,7 @@
   import { fmtBytes } from '../../app/format'
   import { formatOf, RESIN_FORMATS, RESIN_PRINTERS, type ResinFormat, type ResinPrinter, type ResinSettings } from '../../engine/resin/printers'
   import { activeModel, ws } from '../workspace/store.svelte'
+  import { SUPPORT_PRESETS, type SupportPreset } from '../../engine/resin/supports'
   import {
     cancelResinSlice,
     choosePrinter,
@@ -24,6 +25,13 @@
     chooseSendTo,
     setCustom,
     setSetting,
+    applyProfile,
+    applySupportPreset,
+    clearIslandSupports,
+    deleteProfile,
+    saveProfile,
+    supportIslands,
+    supportPresetOf,
     showLayer,
     sliceResinModel,
   } from './resin.svelte'
@@ -37,7 +45,14 @@
   const s = $derived(resin.settings)
   const sup = $derived(resin.supports)
   const hol = $derived(resin.hollow)
-  function setSup(key: 'lift' | 'spacing' | 'tip' | 'angle', e: Event, min: number, max: number) {
+  let profileName = $state('')
+  const profileChanged = $derived(!!resin.profile && !!resin.profiles[resin.profile] && JSON.stringify(resin.profiles[resin.profile]) !== JSON.stringify({ ...resin.profiles[resin.profile], ...s }))
+  const preset = $derived(supportPresetOf(sup))
+  function newProfile() {
+    saveProfile(profileName)
+    profileName = ''
+  }
+  function setSup(key: 'lift' | 'spacing' | 'tip' | 'angle' | 'shaft' | 'raft', e: Event, min: number, max: number) {
     const el = e.currentTarget as HTMLInputElement
     const v = Number(el.value)
     if (Number.isFinite(v) && v >= min && v <= max) setSupport(key, v)
@@ -113,6 +128,20 @@
       <span class="dim">from your resin’s bottle or test print</span>
       <button class="link" onclick={resetSettings}>Reset</button>
     </h3>
+    <div class="profiles">
+      <select aria-label="Resin profile" value={resin.profile} onchange={(e) => applyProfile(e.currentTarget.value)}>
+        <option value="">{Object.keys(resin.profiles).length ? 'Resin profile…' : 'No saved resin profiles'}</option>
+        {#each Object.keys(resin.profiles).sort() as n}<option value={n}>{n}{n === resin.profile && profileChanged ? ' (changed)' : ''}</option>{/each}
+      </select>
+      {#if resin.profile}
+        <button class="ghost mini-btn" title="Save these settings over {resin.profile}" disabled={!profileChanged} onclick={() => saveProfile(resin.profile)}>Update</button>
+        <button class="ghost mini-btn" title="Delete the profile {resin.profile}" aria-label="Delete profile" onclick={() => deleteProfile(resin.profile)}><Icon name="trash" size={12} /></button>
+      {/if}
+    </div>
+    <div class="profiles">
+      <input type="text" maxlength="60" placeholder="Save these settings as… (your resin's name)" bind:value={profileName} onkeydown={(e) => e.key === 'Enter' && newProfile()} />
+      <button class="ghost mini-btn" disabled={!profileName.trim()} onclick={newProfile}>Save</button>
+    </div>
     <div class="grid2">
       <label class="field"><span>Layer height <i>mm</i></span><input type="number" min="0.01" max="0.3" step="0.01" value={s.layerHeight} onchange={(e) => setNum('layerHeight', e, 0.01, 0.3)} /></label>
       <label class="field"><span>Exposure <i>s</i></span><input type="number" min="0.1" max="60" step="0.1" value={s.exposure} onchange={(e) => setNum('exposure', e, 0.1, 60)} /></label>
@@ -124,10 +153,33 @@
       <label class="field"><span>Bottom lift speed <i>mm/min</i></span><input type="number" min="10" max="600" step="5" value={s.bottomLiftSpeed} onchange={(e) => setNum('bottomLiftSpeed', e, 10, 600)} /></label>
       <label class="field"><span>Retract speed <i>mm/min</i></span><input type="number" min="10" max="600" step="5" value={s.retractSpeed} onchange={(e) => setNum('retractSpeed', e, 10, 600)} /></label>
       <label class="field"><span>Light-off wait <i>s</i></span><input type="number" min="0" max="30" step="0.1" value={s.lightOff} onchange={(e) => setNum('lightOff', e, 0, 30)} /></label>
+      <label class="field" title="Layers after the bottom ones whose exposure steps down evenly to the normal exposure"><span>Transition layers</span><input type="number" min="0" max="50" step="1" value={s.transitionLayers} onchange={(e) => setNum('transitionLayers', e, 0, 50)} /></label>
+      <label class="field" title="UV light power for normal layers: 255 is full power"><span>Light power <i>1–255</i></span><input type="number" min="1" max="255" step="1" value={s.lightPwm} onchange={(e) => setNum('lightPwm', e, 1, 255)} /></label>
+      <label class="field" title="UV light power for the bottom layers"><span>Bottom light power <i>1–255</i></span><input type="number" min="1" max="255" step="1" value={s.bottomLightPwm} onchange={(e) => setNum('bottomLightPwm', e, 1, 255)} /></label>
     </div>
+    <details class="more">
+      <summary>Two-stage lift and waits</summary>
+      <p class="hint small">Lift slowly off the film, then fast; come back fast, then slowly for the last part. 0 mm turns a second stage off.</p>
+      <div class="grid2">
+        <label class="field"><span>Second lift <i>mm</i></span><input type="number" min="0" max="20" step="0.5" value={s.lift2Distance} onchange={(e) => setNum('lift2Distance', e, 0, 20)} /></label>
+        <label class="field"><span>Second lift speed <i>mm/min</i></span><input type="number" min="10" max="900" step="5" value={s.lift2Speed} onchange={(e) => setNum('lift2Speed', e, 10, 900)} /></label>
+        <label class="field"><span>Slow last retract <i>mm</i></span><input type="number" min="0" max="20" step="0.5" value={s.retract2Distance} onchange={(e) => setNum('retract2Distance', e, 0, 20)} /></label>
+        <label class="field"><span>Slow retract speed <i>mm/min</i></span><input type="number" min="10" max="900" step="5" value={s.retract2Speed} onchange={(e) => setNum('retract2Speed', e, 10, 900)} /></label>
+        <label class="field"><span>Wait before lift <i>s</i></span><input type="number" min="0" max="30" step="0.1" value={s.restBeforeLift} onchange={(e) => setNum('restBeforeLift', e, 0, 30)} /></label>
+        <label class="field"><span>Wait after lift <i>s</i></span><input type="number" min="0" max="30" step="0.1" value={s.restAfterLift} onchange={(e) => setNum('restAfterLift', e, 0, 30)} /></label>
+        <label class="field"><span>Wait after retract <i>s</i></span><input type="number" min="0" max="30" step="0.1" value={s.restAfterRetract} onchange={(e) => setNum('restAfterRetract', e, 0, 30)} /></label>
+      </div>
+    </details>
     <label class="check">
       <input type="checkbox" checked={s.antialias} onchange={(e) => setSetting('antialias', e.currentTarget.checked)} />
       Smooth edges (anti-aliasing)
+      <select class="mini" value={String(s.aaLevel)} disabled={!s.antialias} title="Grey levels used to smooth edges" onchange={(e) => setSetting('aaLevel', Number(e.currentTarget.value))}>
+        <option value="2">x2</option>
+        <option value="4">x4</option>
+        <option value="8">x8</option>
+        <option value="16">x16</option>
+        <option value="0">Full</option>
+      </select>
     </label>
     <label class="check">
       <input type="checkbox" checked={s.mirror} onchange={(e) => setSetting('mirror', e.currentTarget.checked)} />
@@ -142,12 +194,22 @@
       Add supports <span class="dim">(leave off for pre-supported models)</span>
     </label>
     {#if sup.enabled}
+      <div class="presets" role="radiogroup" aria-label="Support strength">
+        {#each Object.entries(SUPPORT_PRESETS) as [id, p]}
+          <button class="unit" class:on={preset === id} role="radio" aria-checked={preset === id} onclick={() => applySupportPreset(id as SupportPreset)}>{p.label}</button>
+        {/each}
+      </div>
       <div class="grid2">
         <label class="field"><span>Lift off plate <i>mm</i></span><input type="number" min="2" max="30" step="0.5" value={sup.lift} onchange={(e) => setSup('lift', e, 2, 30)} /></label>
         <label class="field"><span>Spacing <i>mm</i></span><input type="number" min="1" max="10" step="0.5" value={sup.spacing} onchange={(e) => setSup('spacing', e, 1, 10)} /></label>
         <label class="field"><span>Tip size <i>mm</i></span><input type="number" min="0.1" max="1.5" step="0.05" value={sup.tip} onchange={(e) => setSup('tip', e, 0.1, 1.5)} /></label>
         <label class="field"><span>Support below <i>°</i></span><input type="number" min="10" max="80" step="5" value={sup.angle} onchange={(e) => setSup('angle', e, 10, 80)} /></label>
+        <label class="field" title="0 sizes each shaft by its height"><span>Shaft <i>mm, 0 = auto</i></span><input type="number" min="0" max="3" step="0.1" value={sup.shaft} onchange={(e) => setSup('shaft', e, 0, 3)} /></label>
+        <label class="field"><span>Raft <i>mm thick</i></span><input type="number" min="0.3" max="3" step="0.1" value={sup.raft} onchange={(e) => setSup('raft', e, 0.3, 3)} /></label>
       </div>
+      {#if resin.islandSupports}
+        <p class="hint small">{resin.islandSupports} extra support{resin.islandSupports === 1 ? '' : 's'} under islands. <button class="link" onclick={clearIslandSupports}>Remove</button></p>
+      {/if}
       <p class="hint small">Pins under every surface flatter than the angle and every lowest point, on a raft. Smaller spacing holds better; a smaller tip leaves smaller marks.</p>
     {/if}
     <label class="check">
@@ -236,6 +298,7 @@
             {/each}
           </ul>
           {#if r.islandCount > 60}<p class="hint small">Showing the first 60.</p>{/if}
+          <button class="ghost test-btn wide" onclick={supportIslands} title="Put a support under each island and slice again">Add supports to islands</button>
         </div>
       {:else}
         <p class="ok">No islands: every part grows from the layer below.</p>
@@ -449,6 +512,7 @@
     font-weight: 600;
   }
   select,
+  input[type='text'],
   input[type='number'] {
     width: 100%;
     min-width: 0;
@@ -552,6 +616,64 @@
   .levels li span {
     color: var(--accent);
     letter-spacing: -1px;
+  }
+  .profiles {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .profiles select,
+  .profiles input {
+    flex: 1;
+  }
+  .mini-btn {
+    flex: none;
+    height: 28px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+  select.mini {
+    width: auto;
+    height: 22px;
+    margin-left: auto;
+    font-size: 11px;
+  }
+  .presets {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .unit {
+    height: 26px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .unit:hover {
+    color: var(--text);
+  }
+  .unit.on {
+    color: var(--text);
+    border-color: var(--neon-line);
+    box-shadow: var(--glow-sm);
+  }
+  .more {
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .more summary {
+    cursor: pointer;
+    margin-bottom: 6px;
+  }
+  .more summary:hover {
+    color: var(--text);
+  }
+  .wide {
+    width: 100%;
   }
   .islands {
     margin-top: 10px;

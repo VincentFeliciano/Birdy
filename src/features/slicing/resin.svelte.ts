@@ -1,9 +1,9 @@
 import { BIG_PREVIEW, decodeLayer, SMALL_PREVIEW } from '../../engine/resin/goo'
-import { DEFAULT_RESIN, formatOf, RESIN_FORMATS, RESIN_PRINTERS, type ResinPrinter, type ResinSettings } from '../../engine/resin/printers'
+import { DEFAULT_RESIN, withResinDefaults, formatOf, RESIN_FORMATS, RESIN_PRINTERS, type ResinPrinter, type ResinSettings } from '../../engine/resin/printers'
 import { gooToCtb } from '../../engine/resin/ctb'
 import { cancelResin, runResin } from '../../engine/resin/runResin'
 import type { HollowSettings, ResinIsland } from '../../engine/resin/slice'
-import { DEFAULT_SUPPORTS, type SupportSettings } from '../../engine/resin/supports'
+import { DEFAULT_SUPPORTS, SUPPORT_PRESETS, type SupportPreset, type SupportSettings } from '../../engine/resin/supports'
 import { updates } from '../../app/updates.svelte'
 import { printCost } from '../../app/costs.svelte'
 import { recordPrint } from '../history/history.svelte'
@@ -73,6 +73,11 @@ export const resin = $state({
   startPrint: true,
   sending: false,
   sendResult: null as { ok: boolean; detail: string } | null,
+  /** Extra supports added under islands (for the current model). */
+  islandSupports: 0,
+  /** Saved resin profiles: name → exposure settings. */
+  profiles: load<Record<string, ResinSettings>>('boaty.resinProfiles', {}),
+  profile: localStorage.getItem('boaty.resinProfile') ?? '',
 })
 
 export function chooseSendTo(id: string) {
@@ -183,6 +188,9 @@ export function initResin() {
     watching = true
     // A sliced file with supports or hollowing belongs to the model as it was: drop it on any edit.
     onModelChange(() => {
+      // Island supports were placed for the model where it stood.
+      islandSupports = null
+      resin.islandSupports = 0
       if (resin.result && (resin.result.support || resin.result.hollow)) clearResult()
     })
   }
@@ -206,6 +214,75 @@ export function setSetting<K extends keyof ResinSettings>(key: K, value: ResinSe
   resin.settings[key] = value
   persist()
   clearResult()
+}
+
+/** Island supports for the current model: x, y and height above its lowest point. */
+let islandSupports: { modelId: string | null; points: { x: number; y: number; dz: number }[] } | null = null
+
+/** Adds a support under every island the last slice found, then slices again. */
+export async function supportIslands() {
+  const r = resin.result
+  if (!r || !r.islands.length) return
+  const lift = r.support?.lift ?? 0
+  const h = resin.settings.layerHeight
+  const points = r.islands.map((i) => ({ x: i.x, y: i.y, dz: (i.layer + 0.5) * h - lift }))
+  const keep = islandSupports && islandSupports.modelId === ws.activeId ? islandSupports.points : []
+  islandSupports = { modelId: ws.activeId, points: [...keep, ...points] }
+  resin.islandSupports = islandSupports.points.length
+  if (!resin.supports.enabled) setSupport('enabled', true)
+  await sliceResinModel()
+}
+
+export function clearIslandSupports() {
+  islandSupports = null
+  resin.islandSupports = 0
+  clearResult()
+}
+
+export function applySupportPreset(id: SupportPreset) {
+  const p = SUPPORT_PRESETS[id]
+  resin.supports.tip = p.tip
+  resin.supports.spacing = p.spacing
+  resin.supports.shaft = p.shaft
+  persist()
+  clearResult()
+}
+
+/** The preset the support settings match, if any. */
+export function supportPresetOf(s: SupportSettings): SupportPreset | null {
+  for (const [id, p] of Object.entries(SUPPORT_PRESETS)) if (p.tip === s.tip && p.spacing === s.spacing && p.shaft === s.shaft) return id as SupportPreset
+  return null
+}
+
+// ---- Resin profiles: named exposure settings, like Chitubox's resin presets ----
+
+function persistProfiles() {
+  localStorage.setItem('boaty.resinProfiles', JSON.stringify(resin.profiles))
+  localStorage.setItem('boaty.resinProfile', resin.profile)
+}
+
+export function saveProfile(name: string) {
+  const n = name.trim().slice(0, 60)
+  if (!n) return
+  resin.profiles[n] = $state.snapshot(resin.settings)
+  resin.profile = n
+  persistProfiles()
+}
+
+export function applyProfile(name: string) {
+  const p = resin.profiles[name]
+  resin.profile = p ? name : ''
+  persistProfiles()
+  if (!p) return
+  resin.settings = withResinDefaults(p)
+  persist()
+  clearResult()
+}
+
+export function deleteProfile(name: string) {
+  delete resin.profiles[name]
+  if (resin.profile === name) resin.profile = ''
+  persistProfiles()
 }
 
 export function setSupport<K extends keyof SupportSettings>(key: K, value: SupportSettings[K]) {
@@ -298,7 +375,7 @@ export async function sliceResinModel() {
         softwareVersion: updates.state?.current ?? 'dev',
         smallPreview: pv.small,
         bigPreview: pv.big,
-        supports: { ...settingsSupports() },
+        supports: { ...settingsSupports(), extra: islandSupports && islandSupports.modelId === ws.activeId ? islandSupports.points : undefined },
         hollow: resin.hollow.enabled ? { wall: resin.hollow.wall, drain: resin.hollow.drain, diameter: resin.hollow.diameter, holes: resin.hollow.holes } : undefined,
       },
       (p) => (resin.progress = p),

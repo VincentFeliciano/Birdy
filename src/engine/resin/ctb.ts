@@ -5,6 +5,7 @@
 // Layer images use Chitubox's 7-bit grey run-length coding, XOR-scrambled per layer with the file key.
 
 import { decodeLayer, type HeaderInfo } from './goo.ts'
+import { layerMotion } from './printers.ts'
 
 const MAGIC_CTB = 0x12fd0086
 const VERSION = 3
@@ -226,8 +227,8 @@ export function buildCtb(h: HeaderInfo, layers: CtbLayer[], seed: number, date =
   head.u32(paramsAt)
   head.u32(PRINT_PARAMS)
   head.u32(1) // anti-aliasing is set in the slicer info for .ctb
-  head.u16(255) // light PWM
-  head.u16(255) // bottom light PWM
+  head.u16(Math.round(s.lightPwm ?? 255)) // light PWM
+  head.u16(Math.round(s.bottomLightPwm ?? 255)) // bottom light PWM
   head.u32(seed)
   head.u32(slicerAt)
   head.u32(SLICER_INFO)
@@ -240,12 +241,14 @@ export function buildCtb(h: HeaderInfo, layers: CtbLayer[], seed: number, date =
     for (let k = 0; k < 4; k++) head.u32(0)
     head.bytes(img)
   }
-  // Print parameters
-  head.f32(s.bottomLiftDistance)
-  head.f32(s.bottomLiftSpeed)
-  head.f32(s.liftDistance)
-  head.f32(s.liftSpeed)
-  head.f32(s.retractSpeed)
+  // Print parameters (first lift stage)
+  const mb = layerMotion(s, true)
+  const mn = layerMotion(s, false)
+  head.f32(mb.lift1)
+  head.f32(mb.speed1)
+  head.f32(mn.lift1)
+  head.f32(mn.speed1)
+  head.f32(mn.retractSpeed1)
   head.f32(h.volumeMm3 / 1000)
   head.f32(h.weightG)
   head.f32(0) // cost
@@ -254,18 +257,24 @@ export function buildCtb(h: HeaderInfo, layers: CtbLayer[], seed: number, date =
   head.u32(s.bottomLayers)
   for (let k = 0; k < 4; k++) head.u32(0)
   // Slicer info, then the machine name
-  for (let k = 0; k < 7; k++) head.f32(0) // second lift/retract stages and rest times unused
+  head.f32(mb.lift2) // bottom second lift
+  head.f32(mb.speed2)
+  head.f32(mn.lift2) // second lift
+  head.f32(mn.speed2)
+  head.f32(mn.retract2) // second retract
+  head.f32(mn.retractSpeed2)
+  head.f32(s.restAfterLift || 0)
   head.u32(slicerAt + SLICER_INFO)
   head.u32(name.length)
   head.u8(s.antialias ? 0x0f : 0x07)
   head.u16(0)
   head.u8(0) // no per-layer settings
   head.u32(Math.floor(date.getTime() / 60000))
-  head.u32(s.antialias ? 8 : 1)
+  head.u32(s.antialias ? (s.aaLevel > 1 ? s.aaLevel : 8) : 1)
   head.u32(0x01060300) // Chitubox-compatible software version for v3
-  head.f32(0)
-  head.f32(0)
-  head.u32(0) // transition layers
+  head.f32(s.restAfterRetract || 0)
+  head.f32(s.restAfterLift || 0) // after the second lift
+  head.u32(Math.max(0, Math.round(s.transitionLayers || 0)))
   head.u32(0)
   head.u32(0)
   head.u32(0)
@@ -294,18 +303,19 @@ export function buildCtb(h: HeaderInfo, layers: CtbLayer[], seed: number, date =
     def(head)
     const rec = new Out(LAYER_DEF_EX + image.length)
     def(rec)
+    const m = l.bottom ? mb : mn
     rec.u32(LAYER_DEF_EX + image.length)
-    rec.f32(l.bottom ? s.bottomLiftDistance : s.liftDistance)
-    rec.f32(l.bottom ? s.bottomLiftSpeed : s.liftSpeed)
-    rec.f32(0)
-    rec.f32(0)
-    rec.f32(s.retractSpeed)
-    rec.f32(0)
-    rec.f32(0)
-    rec.f32(0)
-    rec.f32(0)
-    rec.f32(0)
-    rec.f32(255) // light PWM
+    rec.f32(m.lift1)
+    rec.f32(m.speed1)
+    rec.f32(m.lift2)
+    rec.f32(m.speed2)
+    rec.f32(m.retractSpeed1)
+    rec.f32(m.retract2)
+    rec.f32(m.retractSpeed2)
+    rec.f32(s.restBeforeLift || 0)
+    rec.f32(s.restAfterLift || 0)
+    rec.f32(s.restAfterRetract || 0)
+    rec.f32(Math.round(l.bottom ? (s.bottomLightPwm ?? 255) : (s.lightPwm ?? 255)))
     rec.bytes(image)
     records.push(rec.result())
     at += LAYER_DEF_EX + image.length

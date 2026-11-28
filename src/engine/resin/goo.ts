@@ -1,7 +1,7 @@
 // Elegoo .goo (V3.0) writer and layer reader. Big-endian throughout.
 // Layout follows Elegoo's published GOO format as implemented by the open-source msla_format crate.
 
-import type { ResinPrinter, ResinSettings } from './printers.ts'
+import { layerMotion, type ResinPrinter, type ResinSettings } from './printers.ts'
 
 const DELIM = [0x0d, 0x0a]
 const MAGIC = [0x07, 0x00, 0x00, 0x00, 0x44, 0x4c, 0x50, 0x00]
@@ -147,25 +147,24 @@ export interface LayerInfo {
 /** One layer record: settings, then the encoded image between its marker and checksum. */
 export function layerRecord(s: ResinSettings, info: LayerInfo, image: Uint8Array) {
   const w = writer(74 + image.length)
-  const lift = info.bottom ? s.bottomLiftDistance : s.liftDistance
-  const liftSpeed = info.bottom ? s.bottomLiftSpeed : s.liftSpeed
+  const m = layerMotion(s, info.bottom)
   w.u16(0) // pause
   w.f32(200) // pause position z
   w.f32(info.z)
   w.f32(info.exposure)
   w.f32(s.lightOff)
-  w.f32(0) // before lift
-  w.f32(0) // after lift
-  w.f32(0) // after retract
-  w.f32(lift)
-  w.f32(liftSpeed)
-  w.f32(0) // second lift distance
-  w.f32(0) // second lift speed
-  w.f32(lift)
-  w.f32(s.retractSpeed)
-  w.f32(0) // second retract distance
-  w.f32(0) // second retract speed
-  w.u16(255) // light PWM
+  w.f32(s.restBeforeLift || 0)
+  w.f32(s.restAfterLift || 0)
+  w.f32(s.restAfterRetract || 0)
+  w.f32(m.lift1)
+  w.f32(m.speed1)
+  w.f32(m.lift2)
+  w.f32(m.speed2)
+  w.f32(m.retract1)
+  w.f32(m.retractSpeed1)
+  w.f32(m.retract2)
+  w.f32(m.retractSpeed2)
+  w.u16(Math.round(info.bottom ? (s.bottomLightPwm ?? 255) : (s.lightPwm ?? 255))) // light PWM
   w.bytes(DELIM)
   w.u32(image.length + 2)
   w.u8(0x55)
@@ -233,25 +232,38 @@ export function gooHeader(h: HeaderInfo) {
   w.f32(s.exposure)
   w.u8(0) // exposure delay mode: light-off time
   w.f32(s.lightOff)
-  w.f32(0) // bottom before lift
-  w.f32(0) // bottom after lift
-  w.f32(0) // bottom after retract
-  w.f32(0) // before lift
-  w.f32(0) // after lift
-  w.f32(0) // after retract
+  const rb = s.restBeforeLift || 0
+  const ra = s.restAfterLift || 0
+  const rr = s.restAfterRetract || 0
+  w.f32(rb) // bottom before lift
+  w.f32(ra) // bottom after lift
+  w.f32(rr) // bottom after retract
+  w.f32(rb) // before lift
+  w.f32(ra) // after lift
+  w.f32(rr) // after retract
+  const mb = layerMotion(s, true)
+  const mn = layerMotion(s, false)
   w.f32(s.bottomExposure)
   w.u32(s.bottomLayers)
-  w.f32(s.bottomLiftDistance)
-  w.f32(s.bottomLiftSpeed)
-  w.f32(s.liftDistance)
-  w.f32(s.liftSpeed)
-  w.f32(s.bottomLiftDistance) // bottom retract distance
-  w.f32(s.retractSpeed)
-  w.f32(s.liftDistance) // retract distance
-  w.f32(s.retractSpeed)
-  for (let i = 0; i < 8; i++) w.f32(0) // second lift / retract stages unused
-  w.u16(255) // bottom light PWM
-  w.u16(255) // light PWM
+  w.f32(mb.lift1)
+  w.f32(mb.speed1)
+  w.f32(mn.lift1)
+  w.f32(mn.speed1)
+  w.f32(mb.retract1) // bottom retract distance
+  w.f32(mb.retractSpeed1)
+  w.f32(mn.retract1) // retract distance
+  w.f32(mn.retractSpeed1)
+  // Second stages, in the same order as the first: bottom lift, lift, bottom retract, retract.
+  w.f32(mb.lift2)
+  w.f32(mb.speed2)
+  w.f32(mn.lift2)
+  w.f32(mn.speed2)
+  w.f32(mb.retract2)
+  w.f32(mb.retractSpeed2)
+  w.f32(mn.retract2)
+  w.f32(mn.retractSpeed2)
+  w.u16(Math.round(s.bottomLightPwm ?? 255)) // bottom light PWM
+  w.u16(Math.round(s.lightPwm ?? 255)) // light PWM
   w.u8(0) // per-layer settings
   w.u32(Math.round(h.printSeconds))
   w.f32(h.volumeMm3)
@@ -260,7 +272,7 @@ export function gooHeader(h: HeaderInfo) {
   w.str('$', 8)
   w.u32(GOO_HEADER_SIZE)
   w.u8(1) // grey scale 0x00-0xFF
-  w.u16(0) // transition layers
+  w.u16(Math.max(0, Math.round(s.transitionLayers || 0))) // transition layers
   if (w.offset !== GOO_HEADER_SIZE) throw new Error(`GOO header is ${w.offset} bytes, expected ${GOO_HEADER_SIZE}`)
   return w.buf
 }
