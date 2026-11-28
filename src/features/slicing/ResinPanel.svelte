@@ -5,7 +5,7 @@
   import PricesEditor from '../../components/PricesEditor.svelte'
   import { fmtMoney, prices, printCost } from '../../app/costs.svelte'
   import { fmtBytes } from '../../app/format'
-  import { RESIN_PRINTERS, type ResinPrinter, type ResinSettings } from '../../engine/resin/printers'
+  import { formatOf, RESIN_FORMATS, RESIN_PRINTERS, type ResinFormat, type ResinPrinter, type ResinSettings } from '../../engine/resin/printers'
   import { activeModel, ws } from '../workspace/store.svelte'
   import {
     cancelResinSlice,
@@ -96,7 +96,15 @@
       </div>
     {/if}
     <p class="hint small mono">{printer.resX} × {printer.resY} px · {printer.sizeX} × {printer.sizeY} × {printer.sizeZ} mm · {pxUm} pixels</p>
-    <p class="hint small">Writes Elegoo .goo files. Check that the screen resolution matches your printer’s; it won’t open a file made for a different screen.</p>
+    {#if resin.printerId === 'custom'}
+      <label class="field">
+        <span>File type</span>
+        <select value={formatOf(resin.custom)} onchange={(e) => setCustom('format', e.currentTarget.value as ResinFormat)}>
+          {#each Object.entries(RESIN_FORMATS) as [id, f]}<option value={id}>{f.label}</option>{/each}
+        </select>
+      </label>
+    {/if}
+    <p class="hint small">Writes {RESIN_FORMATS[formatOf(printer)].label} files. Check that the screen resolution matches your printer’s; it won’t open a file made for a different screen.</p>
   </section>
 
   <section>
@@ -242,9 +250,9 @@
         </label>
       {/if}
       <button class="primary wide" disabled={resin.saving} onclick={saveResin}>
-        {#if resin.saving}<span class="spinner"></span>{:else}<Icon name="save" size={15} />{/if}Save .goo file
+        {#if resin.saving}<span class="spinner"></span>{:else}<Icon name="save" size={15} />{/if}Save .{RESIN_FORMATS[formatOf(r.printer)].ext} file
       </button>
-      <p class="hint small mono">{r.name}.goo · {fmtBytes(r.bytes)}</p>
+      <p class="hint small mono">{r.name}.{RESIN_FORMATS[formatOf(r.printer)].ext} · {fmtBytes(r.bytes)}</p>
       {#if resin.savedPath}
         <p class="ok">
           Saved. Copy it to the printer’s USB stick.
@@ -295,7 +303,7 @@
       <Icon name="layers" size={15} />{r ? 'Slice again' : 'Slice for resin'}
     </button>
   {/if}
-  <p class="note">Boaty’s own resin slicer · Elegoo .goo</p>
+  <p class="note">Boaty’s own resin slicer · Elegoo .goo and Chitubox .ctb</p>
 </footer>
 
 <style>

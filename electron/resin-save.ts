@@ -13,14 +13,18 @@ export async function saveResinFile(win: BrowserWindow, req: unknown, exportsDir
   if (!Array.isArray(parts) || !parts.length || !parts.every((p) => p instanceof Uint8Array)) return { ok: false, error: 'There is no sliced file to save.' }
   const total = (parts as Uint8Array[]).reduce((s, p) => s + p.byteLength, 0)
   if (total > MAX_RESIN_BYTES) return { ok: false, error: 'The sliced file is too large.' }
+  const suggested = sanitizeFileName(String(r.suggestedName ?? 'print.goo'))
+  // The slicer names the file for the printer's format.
+  const ext = (/\.(goo|ctb)$/i.exec(suggested)?.[1] ?? 'goo').toLowerCase()
+  const label = ext === 'ctb' ? 'Chitubox CTB' : 'Elegoo GOO'
   const res = await dialog.showSaveDialog(win, {
     title: 'Save resin print file',
-    defaultPath: join(exportsDir, sanitizeFileName(String(r.suggestedName ?? 'print.goo'))),
-    filters: [{ name: 'Elegoo GOO', extensions: ['goo'] }],
+    defaultPath: join(exportsDir, suggested),
+    filters: [{ name: label, extensions: [ext] }],
   })
   if (res.canceled || !res.filePath) return { ok: false, canceled: true }
   let target = res.filePath
-  if (extname(target).toLowerCase() !== '.goo') target += '.goo'
+  if (extname(target).toLowerCase() !== `.${ext}`) target += `.${ext}`
   const tmp = `${target}.partial`
   try {
     const fh = await open(tmp, 'w')

@@ -1,5 +1,6 @@
 import { BIG_PREVIEW, decodeLayer, SMALL_PREVIEW } from '../../engine/resin/goo'
-import { DEFAULT_RESIN, RESIN_PRINTERS, type ResinPrinter, type ResinSettings } from '../../engine/resin/printers'
+import { DEFAULT_RESIN, formatOf, RESIN_FORMATS, RESIN_PRINTERS, type ResinPrinter, type ResinSettings } from '../../engine/resin/printers'
+import { gooToCtb } from '../../engine/resin/ctb'
 import { cancelResin, runResin } from '../../engine/resin/runResin'
 import type { HollowSettings, ResinIsland } from '../../engine/resin/slice'
 import { DEFAULT_SUPPORTS, type SupportSettings } from '../../engine/resin/supports'
@@ -8,7 +9,8 @@ import { printCost } from '../../app/costs.svelte'
 import { recordPrint } from '../history/history.svelte'
 import { activeModel, BED, exportActive, getViewer, onModelChange, setBed, ws } from '../workspace/store.svelte'
 
-// Resin (MSLA) slicing: Boaty's own slicer writing Elegoo .goo files.
+// Resin (MSLA) slicing: Boaty's own slicer. It slices to Elegoo .goo, and converts to the printer's
+// own format (Chitubox .ctb) when the file is saved or sent.
 
 export type SliceMode = 'fdm' | 'resin'
 
@@ -85,7 +87,9 @@ export async function sendResin(printerId: string, printerName: string) {
   resin.sending = true
   resin.sendResult = null
   try {
-    resin.sendResult = await window.api.resin.send({ printerId, name: `${r.name}.goo`, parts, start: resin.startPrint })
+    await nextFrame()
+    const file = printFile(r, parts)
+    resin.sendResult = await window.api.resin.send({ printerId, name: file.name, parts: file.parts, start: resin.startPrint })
     if (resin.sendResult.ok) {
       const s = resin.settings
       void recordPrint({
@@ -109,6 +113,31 @@ export async function sendResin(printerId: string, printerName: string) {
 
 /** The finished file, kept out of reactive state (it can be hundreds of MB). */
 let parts: Uint8Array[] | null = null
+/** Previews used for the last slice, for formats that are made at save time. */
+let lastPreviews: { small?: Uint8ClampedArray; big?: Uint8ClampedArray } = {}
+
+/** The sliced file in the chosen printer's format, with its name. */
+function printFile(r: ResinResult, gooParts: Uint8Array[]): { name: string; parts: Uint8Array[] } {
+  const format = formatOf(r.printer)
+  const name = `${r.name}.${RESIN_FORMATS[format].ext}`
+  if (format === 'goo') return { name, parts: gooParts }
+  const out = gooToCtb(gooParts, {
+    printer: r.printer,
+    settings: $state.snapshot(resin.settings),
+    layers: r.layers,
+    printSeconds: r.printSeconds,
+    volumeMm3: r.volumeMm3,
+    weightG: r.weightG,
+    smallPreview: lastPreviews.small,
+    bigPreview: lastPreviews.big,
+    softwareVersion: updates.state?.current ?? 'dev',
+    date: new Date(),
+  })
+  return { name, parts: out }
+}
+
+/** Lets the "Saving…" spinner show before a long conversion runs. */
+const nextFrame = () => new Promise((r) => setTimeout(r, 30))
 /** Build volume to put back when leaving resin mode. */
 let fdmBed: { x: number; y: number; z: number } | null = null
 /** The model's transform when it was sliced, so island rings follow it in the 3D view. */
@@ -260,6 +289,7 @@ export async function sliceResinModel() {
   const at = getViewer()?.modelMatrix() ?? null
   try {
     const pv = await previews()
+    lastPreviews = pv
     const out = await runResin(
       {
         stl,
@@ -316,6 +346,7 @@ export async function makeExposureTest() {
       (p) => (resin.progress = p),
     )) as Awaited<ReturnType<typeof runResin>> & { times?: number[] }
     parts = out.parts
+    lastPreviews = {}
     resin.result = {
       layers: out.layers,
       printSeconds: out.printSeconds,
@@ -349,7 +380,9 @@ export async function saveResin() {
   resin.saving = true
   resin.saveError = null
   try {
-    const res = await window.api.resin.save({ suggestedName: `${r.name}.goo`, parts })
+    await nextFrame()
+    const file = printFile(r, parts)
+    const res = await window.api.resin.save({ suggestedName: file.name, parts: file.parts })
     if (res.ok && res.path) {
       resin.savedPath = res.path
       const s = resin.settings

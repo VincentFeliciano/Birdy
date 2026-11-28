@@ -22,6 +22,19 @@ import type {
 import { MAX_MODEL_BYTES, sanitizeFileName, workspaceDirs } from '../file-system'
 import { bedFromSettings, buildJobPreset, customPreset, parseCatalogLog, parseConfigBlock, pickFilament, pickProcess, stripConfChecksum, summarizeGcode, withConfChecksum } from './presets'
 import { BUILTIN_PRESETS } from './builtins'
+import { gxInfoFromGcode, printerModelOf, toGx, wantsGx } from '../gx'
+
+/**
+ * The file a slice should be saved or sent as: older Flashforge printers want .gx (G-code with a
+ * header and preview); everything else gets the .gcode as it is (data null: copy the file).
+ */
+export async function printFileFor(gcodePath: string): Promise<{ name: string; data: Buffer | null }> {
+  const name = gcodePath.split(/[\\/]/).pop()!
+  const raw = await readFile(gcodePath)
+  const text = raw.toString('latin1')
+  if (!wantsGx(printerModelOf(text))) return { name, data: null }
+  return { name: name.replace(/\.(gcode|gco|g)$/i, '') + '.gx', data: Buffer.from(toGx(raw, gxInfoFromGcode(text))) }
+}
 
 /**
  * The slicing engine is OrcaSlicer (AGPL-3.0), run as a separate command-line process.
@@ -497,7 +510,9 @@ export class SlicingEngine {
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }
-    const name = src.split(/[\\/]/).pop()!
+    const file = await printFileFor(src)
+    const name = file.name
+    const gx = !!file.data
     const chosen = this.gcodeFolder()
     let target: string
     if (mode === 'folder') {
@@ -514,20 +529,21 @@ export class SlicingEngine {
       const res = forced ? { canceled: false, filePath: forced } : await dialog.showSaveDialog(win, {
         title: 'Save G-code',
         defaultPath: join(start, name),
-        filters: [{ name: 'G-code', extensions: ['gcode'] }],
+        filters: [gx ? { name: 'Flashforge print file', extensions: ['gx'] } : { name: 'G-code', extensions: ['gcode'] }],
       })
       if (res.canceled || !res.filePath) return { ok: false, canceled: true }
       target = res.filePath
     }
-    const dest = /\.(gcode|gco|g)$/i.test(target) ? target : `${target}.gcode`
+    const dest = gx ? (/\.gx$/i.test(target) ? target : `${target}.gx`) : /\.(gcode|gco|g)$/i.test(target) ? target : `${target}.gcode`
     // Any failure is reported to the user, never thrown away.
     try {
       // Only create a missing folder: Windows refuses mkdir on a drive root ("K:\\", a USB stick)
       // with EPERM even though it exists and is writable.
       if (!existsSync(dirname(dest))) await mkdir(dirname(dest), { recursive: true })
-      await copyWithRetry(src, dest)
-      const [a, b] = await Promise.all([stat(src), stat(dest)])
-      if (a.size !== b.size) return { ok: false, error: 'The saved file could not be verified.' }
+      if (file.data) await writeFile(dest, file.data)
+      else await copyWithRetry(src, dest)
+      const expected = file.data ? file.data.length : (await stat(src)).size
+      if ((await stat(dest)).size !== expected) return { ok: false, error: 'The saved file could not be verified.' }
       // Next time, start where this one went.
       this.rememberGcodeFolder(dirname(dest))
       return { ok: true, path: dest }

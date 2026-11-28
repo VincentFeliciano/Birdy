@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { ffSend, ffStatus, ffTest, type FlashforgeTarget } from './flashforge'
+import { printFileFor } from './slicing/engine'
 import { sdcpStart, sdcpStatus, sdcpTest, sdcpUpload } from './sdcp'
 import type { PrinterInfo, PrinterInput, PrinterKind, PrinterState, PrinterStatus, PrinterTestResult, SendResult } from '../src/types/slicing'
 
@@ -137,7 +138,9 @@ export async function sendToPrinter(id: string, gcodePath: string, start: boolea
     const data = await readFile(gcodePath)
     const name = basename(gcodePath).replace(/[^\w.\- ]+/g, '_')
     if (p.kind === 'flashforge') {
-      const stored = await ffSend(ff(p), name, data, start, UPLOAD_TIMEOUT_MS)
+      // Older Flashforge models get a .gx file (G-code with a header and preview).
+      const file = await printFileFor(gcodePath)
+      const stored = await ffSend(ff(p), file.name.replace(/[^\w.\- ]+/g, '_'), file.data ?? data, start, UPLOAD_TIMEOUT_MS)
       return { ok: true, detail: start ? `Sent ${stored} to ${p.name} and started the print.` : `Uploaded ${stored} to ${p.name}. Start it from the printer’s screen.` }
     }
     if (p.kind === 'octoprint') {

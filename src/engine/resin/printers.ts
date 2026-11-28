@@ -10,10 +10,19 @@ export interface ResinPrinter {
   sizeX: number
   sizeY: number
   sizeZ: number
+  /** The file the printer reads: Elegoo .goo (default) or Chitubox .ctb. */
+  format?: ResinFormat
 }
 
+export type ResinFormat = 'goo' | 'ctb'
+export const RESIN_FORMATS: Record<ResinFormat, { ext: string; label: string }> = {
+  goo: { ext: 'goo', label: 'Elegoo .goo' },
+  ctb: { ext: 'ctb', label: 'Chitubox .ctb' },
+}
+export const formatOf = (p: ResinPrinter): ResinFormat => p.format ?? 'goo'
+
 /**
- * Elegoo printers that read .goo files. Values are the published screen specs; the printer refuses
+ * Resin printers and the file each one reads (.goo unless `format` says otherwise). Values are the published screen specs; the printer refuses
  * a file whose resolution doesn't match its screen, so "Custom" lets people type their own.
  */
 export const RESIN_PRINTERS: ResinPrinter[] = [
@@ -23,6 +32,15 @@ export const RESIN_PRINTERS: ResinPrinter[] = [
   { id: 'saturn3ultra', name: 'Elegoo Saturn 3 Ultra (12K)', resX: 11520, resY: 5120, sizeX: 218.88, sizeY: 122.88, sizeZ: 250 },
   { id: 'mars5ultra', name: 'Elegoo Mars 5 Ultra (9K)', resX: 8520, resY: 4320, sizeX: 153.36, sizeY: 77.76, sizeZ: 165 },
   { id: 'mars5', name: 'Elegoo Mars 5 (4K)', resX: 4098, resY: 2560, sizeX: 143.43, sizeY: 89.6, sizeZ: 150 },
+  // Printers with a Chitubox mainboard read .ctb files.
+  { id: 'saturn3-ctb', name: 'Elegoo Saturn 3 (12K) · .ctb', resX: 11520, resY: 5120, sizeX: 218.88, sizeY: 122.88, sizeZ: 250, format: 'ctb' },
+  { id: 'saturn2', name: 'Elegoo Saturn 2 (8K)', resX: 7680, resY: 4320, sizeX: 218.88, sizeY: 123.12, sizeZ: 250, format: 'ctb' },
+  { id: 'saturn', name: 'Elegoo Saturn (4K)', resX: 3840, resY: 2400, sizeX: 192, sizeY: 120, sizeZ: 200, format: 'ctb' },
+  { id: 'mars4-9k', name: 'Elegoo Mars 4 (9K)', resX: 8520, resY: 4320, sizeX: 153.36, sizeY: 77.76, sizeZ: 175, format: 'ctb' },
+  { id: 'mars3', name: 'Elegoo Mars 3 / 3 Pro (4K)', resX: 4098, resY: 2560, sizeX: 143.43, sizeY: 89.6, sizeZ: 175, format: 'ctb' },
+  { id: 'sonic-mini-8k', name: 'Phrozen Sonic Mini 8K', resX: 7500, resY: 3240, sizeX: 165, sizeY: 71.28, sizeZ: 180, format: 'ctb' },
+  { id: 'sonic-mini-4k', name: 'Phrozen Sonic Mini 4K', resX: 3840, resY: 2160, sizeX: 134.4, sizeY: 75.6, sizeZ: 130, format: 'ctb' },
+  { id: 'sonic-mighty-8k', name: 'Phrozen Sonic Mighty 8K', resX: 7680, resY: 4320, sizeX: 218.88, sizeY: 123.12, sizeZ: 235, format: 'ctb' },
 ]
 
 export interface ResinSettings {
