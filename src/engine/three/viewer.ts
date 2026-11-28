@@ -131,6 +131,17 @@ export class Viewer {
   private pvTravel: THREE.LineSegments | null = null
   private pvData: GcodePreview | null = null
   private pvLayer = 0
+  /** Playback: how far along the extrusion path the nozzle is, as segment index plus fraction. */
+  private pvSeg = 0
+  private pvFrac = 0
+  private pvPlaying = false
+  /** Nozzle speed along the path while playing, mm/s. */
+  private pvSpeed = 60
+  private pvLast = 0
+  private pvReported = 0
+  private ghost: THREE.Group | null = null
+  /** Called while playing (and when it stops): current layer (from 1), share done (0–1), still playing. */
+  onPreviewProgress: ((layer: number, done: number, playing: boolean) => void) | null = null
   /** Problem highlights, drawn in the space the check measured and moved along with the model. */
   private marks = new THREE.Group()
   /** Hole rings live in world space so they keep their screen size. */
@@ -345,6 +356,7 @@ export class Viewer {
     this.fitDepthRange()
     this.updateMarks()
     this.updateIslands()
+    this.stepPlayback()
     this.composer.render()
   }
 
@@ -827,6 +839,8 @@ export class Viewer {
       disposeObject(this.preview)
     }
     this.preview = null
+    this.ghost = null
+    this.pvPlaying = false
     this.pvLayers = this.pvTop = this.pvTravel = null
     this.pvData = p
     if (!p) {
@@ -865,17 +879,20 @@ export class Viewer {
     this.pvTravel.visible = false
     for (const l of [this.pvLayers, this.pvTop, this.pvTravel]) l.frustumCulled = false
     this.preview = new THREE.Group()
-    this.preview.add(this.pvLayers, this.pvTop, this.pvTravel)
+    this.ghost = makeGhostNozzle()
+    this.ghost.visible = false
+    this.preview.add(this.pvLayers, this.pvTop, this.pvTravel, this.ghost)
     this.preview.position.set(-center[0], -center[1], 0)
     this.scene.add(this.preview)
     this.setPreviewLayer(p.layerEnds.length)
     this.setPreviewVisible(true)
   }
 
-  /** Shows layers 1..n (n counts from 1). */
+  /** Shows layers 1..n (n counts from 1). Stops playback; play then carries on from the end of layer n. */
   setPreviewLayer(n: number) {
     const p = this.pvData
     if (!p || !this.pvLayers || !this.pvTop || !this.pvTravel) return
+    this.pvPlaying = false
     const layers = p.layerEnds.length
     this.pvLayer = Math.max(1, Math.min(layers, Math.round(n)))
     const end = p.layerEnds[this.pvLayer - 1] ?? 0
@@ -883,6 +900,127 @@ export class Viewer {
     this.pvLayers.geometry.setDrawRange(0, end * 2)
     this.pvTop.geometry.setDrawRange(start * 2, (end - start) * 2)
     this.pvTravel.geometry.setDrawRange(0, (p.travelEnds[this.pvLayer - 1] ?? 0) * 2)
+    this.pvSeg = end
+    this.pvFrac = 0
+    if (this.ghost) this.ghost.visible = false
+  }
+
+  // ---- Playback: the path drawn move by move, with a ghost nozzle ------------------
+
+  private get pvSegments() {
+    return this.pvData ? this.pvData.featureOf.length : 0
+  }
+
+  /** Starts playing at `mmPerSecond` along the path. From the very end, it starts again at the bottom. */
+  playPreview(mmPerSecond = this.pvSpeed) {
+    if (!this.pvData || !this.pvSegments) return
+    this.pvSpeed = mmPerSecond
+    if (this.pvSeg >= this.pvSegments) {
+      this.pvSeg = 0
+      this.pvFrac = 0
+    }
+    this.pvPlaying = true
+    this.pvLast = performance.now()
+    this.showPlayback()
+  }
+
+  pausePreview() {
+    if (!this.pvPlaying) return
+    this.pvPlaying = false
+    this.report(true)
+  }
+
+  setPreviewSpeed(mmPerSecond: number) {
+    this.pvSpeed = mmPerSecond
+  }
+
+  /** Jumps to a point along the path (0–1), keeping play or pause as it was. */
+  seekPreview(f: number) {
+    if (!this.pvData) return
+    const total = this.pvSegments
+    const at = Math.max(0, Math.min(1, f)) * total
+    this.pvSeg = Math.min(total, Math.floor(at))
+    this.pvFrac = this.pvSeg < total ? at - this.pvSeg : 0
+    this.pvLast = performance.now()
+    this.showPlayback()
+    this.report(true)
+  }
+
+  /** Back to the first move, paused, with nothing printed yet. */
+  restartPreview() {
+    if (!this.pvData) return
+    this.pvPlaying = false
+    this.pvSeg = 0
+    this.pvFrac = 0
+    this.showPlayback()
+    this.report(true)
+  }
+
+  private stepPlayback() {
+    if (!this.pvPlaying || !this.pvData) return
+    const now = performance.now()
+    // Long frames (a hidden window) don't jump the print ahead.
+    const dt = Math.min(0.1, (now - this.pvLast) / 1000)
+    this.pvLast = now
+    const pos = this.pvData.positions
+    const total = this.pvSegments
+    let left = this.pvSpeed * dt
+    let guard = 400_000
+    while (left > 0 && this.pvSeg < total && guard-- > 0) {
+      const o = this.pvSeg * 6
+      const len = Math.max(1e-3, Math.hypot(pos[o + 3]! - pos[o]!, pos[o + 4]! - pos[o + 1]!, pos[o + 5]! - pos[o + 2]!))
+      const rest = len * (1 - this.pvFrac)
+      if (left >= rest) {
+        left -= rest
+        this.pvSeg++
+        this.pvFrac = 0
+      } else {
+        this.pvFrac += left / len
+        left = 0
+      }
+    }
+    if (this.pvSeg >= total) this.pvPlaying = false
+    this.showPlayback()
+    this.report(!this.pvPlaying)
+  }
+
+  /** Draws everything printed so far and puts the ghost nozzle where the print has got to. */
+  private showPlayback() {
+    const p = this.pvData
+    if (!p || !this.pvLayers || !this.pvTop || !this.pvTravel || !this.ghost) return
+    const total = this.pvSegments
+    const seg = Math.min(this.pvSeg, total)
+    // Layer holding the current segment (first layer whose end is past it).
+    let lo = 0
+    let hi = p.layerEnds.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (p.layerEnds[mid]! > seg) hi = mid
+      else lo = mid + 1
+    }
+    this.pvLayer = lo + 1
+    const start = lo > 0 ? p.layerEnds[lo - 1]! : 0
+    this.pvLayers.geometry.setDrawRange(0, seg * 2)
+    this.pvTop.geometry.setDrawRange(start * 2, Math.max(0, seg - start) * 2)
+    this.pvTravel.geometry.setDrawRange(0, (lo > 0 ? p.travelEnds[lo - 1]! : 0) * 2)
+    if (seg >= total) {
+      this.ghost.visible = false
+      return
+    }
+    const o = seg * 6
+    const f = this.pvFrac
+    const a = p.positions
+    this.ghost.position.set(a[o]! + (a[o + 3]! - a[o]!) * f, a[o + 1]! + (a[o + 4]! - a[o + 1]!) * f, a[o + 2]! + (a[o + 5]! - a[o + 2]!) * f)
+    this.ghost.visible = true
+  }
+
+  /** Tells the app the layer and progress, at most ten times a second unless `now`. */
+  private report(now: boolean) {
+    const t = performance.now()
+    if (!now && t - this.pvReported < 100) return
+    this.pvReported = t
+    const total = this.pvSegments
+    this.onPreviewProgress?.(this.pvLayer, total ? Math.min(1, (this.pvSeg + this.pvFrac) / total) : 0, this.pvPlaying)
   }
 
   setPreviewTravel(on: boolean) {
@@ -891,6 +1029,7 @@ export class Viewer {
 
   /** Switches between the toolpaths and the model. */
   setPreviewVisible(on: boolean) {
+    if (!on) this.pausePreview()
     if (this.preview) this.preview.visible = on
     if (this.model) this.model.visible = !(on && this.preview)
     this.attachGizmo()
@@ -924,6 +1063,38 @@ export class Viewer {
     this.renderer.dispose()
     this.renderer.domElement.remove()
   }
+}
+
+/**
+ * A see-through hotend, life size, with the nozzle tip at the origin: nozzle cone, hex, heater
+ * block and heat sink, as faint glass with glowing outlines and a bright dot where plastic comes out.
+ */
+function makeGhostNozzle(): THREE.Group {
+  const g = new THREE.Group()
+  const glass = new THREE.MeshBasicMaterial({ color: '#7fe9ff', transparent: true, opacity: 0.16, depthWrite: false, toneMapped: false })
+  const line = new THREE.LineBasicMaterial({ color: new THREE.Color(0.55, 1.5, 1.8), transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false })
+  const part = (geo: THREE.BufferGeometry) => {
+    const m = new THREE.Mesh(geo, glass)
+    m.renderOrder = 3
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 25), line)
+    e.renderOrder = 4
+    g.add(m, e)
+  }
+  // Nozzle: a cone pointing down, tip at z = 0.
+  part(new THREE.ConeGeometry(2.6, 4, 20, 1, true).rotateX(-Math.PI / 2).translate(0, 0, 2))
+  // Nozzle hex.
+  part(new THREE.CylinderGeometry(3.6, 3.6, 2.4, 6).rotateX(Math.PI / 2).translate(0, 0, 5.2))
+  // Heater block, offset to one side like most hotends.
+  part(new THREE.BoxGeometry(20, 16, 10).translate(4, 0, 11.4))
+  // Heat break and heat sink.
+  part(new THREE.CylinderGeometry(1.6, 1.6, 4, 12).rotateX(Math.PI / 2).translate(0, 0, 18.4))
+  part(new THREE.CylinderGeometry(7, 7, 18, 24).rotateX(Math.PI / 2).translate(0, 0, 29.4))
+  // The hot tip.
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.3, 0.75, 0.3), toneMapped: false }))
+  tip.renderOrder = 5
+  g.add(tip)
+  for (const o of g.children) o.frustumCulled = false
+  return g
 }
 
 function disposeObject(root: THREE.Object3D) {

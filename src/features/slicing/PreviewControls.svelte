@@ -1,9 +1,28 @@
 <script lang="ts">
   import Icon from '../../components/Icon.svelte'
-  import { setPreviewLayer, setPreviewOn, setPreviewTravel, sl } from './store.svelte'
+  import {
+    PLAY_SPEEDS,
+    restartPlayback,
+    seekPlayback,
+    setPlaySpeed,
+    setPreviewLayer,
+    setPreviewOn,
+    setPreviewTravel,
+    sl,
+    togglePlayback,
+  } from './store.svelte'
 
   const p = $derived(sl.preview)
   const z = $derived(p.layerZ[p.layer - 1])
+
+  /** Space plays and pauses while the toolpaths are shown, unless you're typing somewhere. */
+  function onWindowKey(e: KeyboardEvent) {
+    if (e.code !== 'Space' || !p.ready || !p.on || e.repeat) return
+    const t = e.target as HTMLElement | null
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(t.tagName))) return
+    e.preventDefault()
+    togglePlayback()
+  }
 
   function onKey(e: KeyboardEvent) {
     const step = e.shiftKey ? 10 : 1
@@ -15,6 +34,8 @@
     e.preventDefault()
   }
 </script>
+
+<svelte:window onkeydown={onWindowKey} />
 
 {#if p.ready && p.on}
   <div class="layers mono">
@@ -35,6 +56,27 @@
     <span class="val">{p.layer}<i>/{p.layers}</i></span>
     {#if z !== undefined}<span class="val">Z {z.toFixed(2)}<i>MM</i></span>{/if}
   </div>
+  <div class="dock">
+  <div class="player" role="group" aria-label="Play the print">
+    <button class="icon-btn" title="Back to the first layer" aria-label="Back to the start" onclick={restartPlayback}><Icon name="reset" size={13} /></button>
+    <button class="play" title={p.playing ? 'Pause (Space)' : 'Play the print move by move (Space)'} aria-label={p.playing ? 'Pause' : 'Play'} onclick={togglePlayback}>
+      <Icon name={p.playing ? 'pause' : 'play'} size={14} />
+    </button>
+    <input
+      class="scrub"
+      type="range"
+      min="0"
+      max="1000"
+      step="1"
+      value={Math.round(p.done * 1000)}
+      aria-label="Position in the print"
+      title="Drag to move through the print"
+      oninput={(e) => seekPlayback(Number(e.currentTarget.value) / 1000)} />
+    <span class="pct mono">{Math.floor(p.done * 100)}%</span>
+    <select class="speed" title="Playback speed: 1× is about a real printer's pace" aria-label="Playback speed" value={p.speed} onchange={(e) => setPlaySpeed(Number(e.currentTarget.value))}>
+      {#each PLAY_SPEEDS as s, i}<option value={i}>{s.label}</option>{/each}
+    </select>
+  </div>
   <div class="legend">
     {#each p.features as f}
       <span class="item"><i style:background={f.color} style:box-shadow={`0 0 6px ${f.color}`}></i>{f.name}</span>
@@ -44,6 +86,7 @@
       Travel moves
     </label>
     <button class="ghost" onclick={() => setPreviewOn(false)}><Icon name="cube" size={13} />Show model</button>
+  </div>
   </div>
 {:else if p.ready}
   <div class="legend compact">
@@ -101,6 +144,72 @@
     font-size: 10px;
     margin-left: 3px;
     text-shadow: none;
+  }
+  /* The player sits on top of the legend; the two grow upward together and never overlap. */
+  .dock {
+    position: absolute;
+    left: 56px;
+    bottom: 52px;
+    max-width: calc(100% - 200px);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    z-index: 3;
+  }
+  .player {
+    width: min(460px, 100%);
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: var(--r-md);
+    background: rgba(11, 12, 15, 0.72);
+    border: 1px solid var(--neon-soft);
+    z-index: 3;
+  }
+  .player .play {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid var(--neon-line);
+    background: rgba(var(--accent-rgb), 0.14);
+    color: var(--accent);
+    cursor: pointer;
+    box-shadow: var(--glow-sm);
+  }
+  .player .play:hover {
+    background: rgba(var(--accent-rgb), 0.26);
+  }
+  .scrub {
+    flex: 1;
+    min-width: 60px;
+    accent-color: var(--accent);
+  }
+  .pct {
+    width: 34px;
+    text-align: right;
+    font-size: 11px;
+    color: var(--accent);
+  }
+  .speed {
+    flex: none;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 11px;
+    padding: 0 4px;
+  }
+  .dock .legend {
+    position: static;
+    max-width: none;
   }
   .legend {
     position: absolute;

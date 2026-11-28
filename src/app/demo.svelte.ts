@@ -10,7 +10,7 @@ import { browser as browserState } from '../stores/browser.svelte'
 import { bar, refreshPrinters, setBarHidden, togglePrinter } from '../features/printers/status.svelte'
 import { addShape, setTool, setSizeUnit, scaleBy, moveBy, rotateBy, undo, redo, setUniform, setDimension, writeTextOnPart, setPartColor, alignParts, splitToFit, combineParts, cutPart, hollowPart, rebuildPart, simplifyPart, smoothPart, undoEdit, arrangePlate, autoOrient, settleModel, setIsolate, splitIntoParts, checkNow, getViewer, duplicatePart, exportActive, focusMark, openModelFile, repairActive, selectPart, setXForm, ws } from '../features/workspace/store.svelte'
 import { choosePrinter as chooseResinPrinter, sendResin, makeExposureTest, pickIsland, resin, setMode as setSliceMode, setHollow, setSupport, sliceResinModel } from '../features/slicing/resin.svelte'
-import { chooseGcodeFolder, chooseMachine, folderLabel, importFrom, installEngine, loadCatalog, openPrinterEditor, saveGcode, setPreset, setPreviewLayer, sl, slice } from '../features/slicing/store.svelte'
+import { chooseGcodeFolder, chooseMachine, folderLabel, importFrom, installEngine, loadCatalog, openPrinterEditor, restartPlayback, saveGcode, seekPlayback, setPlaySpeed, setPreset, setPreviewLayer, sl, slice, togglePlayback } from '../features/slicing/store.svelte'
 import { BED } from '../features/workspace/store.svelte'
 
 /** Builds a small printable sample (a torus knot, ~70 mm) as a real binary STL and opens it. */
@@ -783,6 +783,21 @@ Shape {
     console.log(`slice: ${sl.result?.summary?.printTime} ${sl.result?.summary?.filamentG}g layers=${sl.preview.layers} features=${sl.preview.features.map((f) => f.name).join('/')}`)
     // A transform tool open over the toolpath preview (to check the two don't overlap).
     const demoTool = (window as unknown as { __demoTool?: string }).__demoTool
+    if (demoTool === 'play') {
+      // Play the print from the bottom, then pause part way to show the ghost nozzle mid-print.
+      restartPlayback()
+      setPlaySpeed(3)
+      togglePlayback()
+      const t0 = performance.now()
+      await new Promise((r) => setTimeout(r, 2500))
+      togglePlayback()
+      console.log(`play: paused=${!sl.preview.playing} layer=${sl.preview.layer}/${sl.preview.layers} done=${(sl.preview.done * 100).toFixed(1)}% after ${Math.round(performance.now() - t0)} ms`)
+      seekPlayback(0.45)
+      await new Promise((r) => setTimeout(r, 300))
+      console.log(`seek: layer=${sl.preview.layer} done=${(sl.preview.done * 100).toFixed(1)}%`)
+      ws.layout = 'workspace'
+      await new Promise((r) => setTimeout(r, 400))
+    }
     if (demoTool === 'move' || demoTool === 'scale' || demoTool === 'rotate') {
       ws.layout = 'workspace'
       await new Promise((r) => setTimeout(r, 200))

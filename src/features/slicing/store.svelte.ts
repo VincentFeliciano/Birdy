@@ -78,6 +78,12 @@ export const sl = $state({
     layerZ: [] as number[],
     features: [] as FeatureStat[],
     travel: false,
+    /** Playback of the path, move by move. */
+    playing: false,
+    /** Share of the path printed so far in playback, 0–1 (1 = all shown). */
+    done: 1,
+    /** Index into PLAY_SPEEDS. */
+    speed: Number(localStorage.getItem('boaty.playSpeed') ?? 2) || 0,
   },
 })
 
@@ -299,7 +305,7 @@ export function clearSlice() {
   sl.resultFor = null
   sl.stale = false
   sl.sendResult = null
-  Object.assign(sl.preview, { loading: false, ready: false, on: false, layers: 0, layer: 0, layerZ: [], features: [] })
+  Object.assign(sl.preview, { loading: false, ready: false, on: false, layers: 0, layer: 0, layerZ: [], features: [], playing: false, done: 1 })
   getViewer()?.setPreview(null, featureColor)
 }
 
@@ -355,6 +361,11 @@ async function showPreview() {
       ? [(Math.min(...bed.map((q) => q[0])) + Math.max(...bed.map((q) => q[0]))) / 2, (Math.min(...bed.map((q) => q[1])) + Math.max(...bed.map((q) => q[1]))) / 2]
       : undefined
     viewer.setPreview(p, featureColor, center)
+    viewer.onPreviewProgress = (layer, done, playing) => {
+      sl.preview.layer = layer
+      sl.preview.done = done
+      sl.preview.playing = playing
+    }
     const counts = new Map<number, number>()
     for (const f of p.featureOf) counts.set(f, (counts.get(f) ?? 0) + 1)
     Object.assign(sl.preview, {
@@ -368,6 +379,8 @@ async function showPreview() {
         .filter((f) => f.count > 0)
         .sort((a, b) => b.count - a.count),
       travel: false,
+      playing: false,
+      done: 1,
     })
     await tick()
     requestAnimationFrame(() => viewer.view('iso'))
@@ -380,12 +393,59 @@ async function showPreview() {
 
 export function setPreviewOn(on: boolean) {
   sl.preview.on = on && sl.preview.ready
+  if (!sl.preview.on) sl.preview.playing = false
   getViewer()?.setPreviewVisible(sl.preview.on)
 }
 
 export function setPreviewLayer(n: number) {
   sl.preview.layer = Math.max(1, Math.min(sl.preview.layers, Math.round(n)))
+  sl.preview.playing = false
+  sl.preview.done = sl.preview.layers ? sl.preview.layer / sl.preview.layers : 1
   getViewer()?.setPreviewLayer(sl.preview.layer)
+}
+
+/** Playback speeds: how fast the ghost nozzle moves along the path, mm/s. 1x is about a real printer's pace. */
+export const PLAY_SPEEDS = [
+  { label: '1×', mmS: 60 },
+  { label: '10×', mmS: 600 },
+  { label: '50×', mmS: 3000 },
+  { label: '200×', mmS: 12000 },
+  { label: '1000×', mmS: 60000 },
+  { label: '5000×', mmS: 300000 },
+]
+const playSpeed = () => PLAY_SPEEDS[Math.max(0, Math.min(PLAY_SPEEDS.length - 1, sl.preview.speed))]!.mmS
+
+/** Plays the print from where it is (from the bottom when it's all shown), or pauses it. */
+export function togglePlayback() {
+  const v = getViewer()
+  if (!v || !sl.preview.ready) return
+  if (sl.preview.playing) {
+    v.pausePreview()
+    sl.preview.playing = false
+    return
+  }
+  if (!sl.preview.on) setPreviewOn(true)
+  v.playPreview(playSpeed())
+  sl.preview.playing = true
+}
+
+/** Back to the first move, ready to play from the bottom. */
+export function restartPlayback() {
+  getViewer()?.restartPreview()
+  sl.preview.done = 0
+  sl.preview.layer = 1
+}
+
+/** Scrubs playback to a point along the path (0–1). */
+export function seekPlayback(f: number) {
+  if (!sl.preview.on) setPreviewOn(true)
+  getViewer()?.seekPreview(f)
+}
+
+export function setPlaySpeed(i: number) {
+  sl.preview.speed = Math.max(0, Math.min(PLAY_SPEEDS.length - 1, i))
+  localStorage.setItem('boaty.playSpeed', String(sl.preview.speed))
+  getViewer()?.setPreviewSpeed(playSpeed())
 }
 
 export function setPreviewTravel(on: boolean) {
