@@ -13,7 +13,7 @@ import type {
   SliceResult,
   SliceSettings,
 } from '../../types/slicing'
-import { fitsMachine } from '../../../electron/slicing/presets'
+import { fitsMachine, saneOverrides } from '../../../electron/slicing/presets'
 import { parseGcodeInWorker } from '../../engine/gcode/runParse'
 import { printCost } from '../../app/costs.svelte'
 import { recordPrint } from '../history/history.svelte'
@@ -26,7 +26,7 @@ const SETTINGS_KEY = 'birdy.slice'
 function loadSettings(): SliceSettings {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '') as SliceSettings
-    if (s && typeof s.machine === 'string') return { machine: s.machine, process: s.process ?? '', filament: s.filament ?? '', overrides: s.overrides ?? {} }
+    if (s && typeof s.machine === 'string') return { machine: s.machine, process: s.process ?? '', filament: s.filament ?? '', overrides: saneOverrides(s.overrides ?? {}) }
   } catch {
     /* defaults */
   }
@@ -280,7 +280,7 @@ export async function importFrom(source: ImportSource) {
     if (r.settings?.machine) sl.settings.machine = r.settings.machine
     if (r.settings?.process) sl.settings.process = r.settings.process
     if (r.settings?.filament) sl.settings.filament = r.settings.filament
-    if (r.settings?.overrides) sl.settings.overrides = { ...r.settings.overrides }
+    if (r.settings?.overrides) sl.settings.overrides = saneOverrides({ ...r.settings.overrides })
     ensureValidSelection()
     const name = sl.candidates.find((c) => c.source === source)?.name ?? source
     sl.importNotes = [

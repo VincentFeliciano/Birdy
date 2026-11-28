@@ -93,7 +93,88 @@ const pct = (n: number) => `${Math.round(n)}%`
 const num = (n: number) => String(Math.round(n * 1000) / 1000)
 
 /** Orca setting keys for each override, as the string values its preset JSON uses. */
-export function overrideKeys(kind: PresetKind, o: SliceOverrides): Record<string, string | string[]> {
+/**
+ * Sensible ranges for every number in the slice panel: [lowest, highest, unit, why the low end matters].
+ * Values outside these are refused in the panel and ignored when slicing; they would ruin a print
+ * (an acceleration of 30 mm/s² turns a day's print into a week) or the printer can't do them.
+ */
+export const OVERRIDE_LIMITS: Partial<Record<keyof SliceOverrides, { min: number; max: number; unit: string; label: string }>> = {
+  layerHeight: { min: 0.04, max: 1.2, unit: 'mm', label: 'Layer height' },
+  infill: { min: 0, max: 100, unit: '%', label: 'Infill' },
+  walls: { min: 1, max: 20, unit: '', label: 'Walls' },
+  supportAngle: { min: 0, max: 90, unit: '°', label: 'Support angle' },
+  brimWidth: { min: 0.5, max: 30, unit: 'mm', label: 'Brim width' },
+  brimGap: { min: 0, max: 2, unit: 'mm', label: 'Brim gap' },
+  skirtLoops: { min: 1, max: 20, unit: '', label: 'Skirt loops' },
+  skirtDistance: { min: 0, max: 60, unit: 'mm', label: 'Skirt distance' },
+  skirtHeight: { min: 1, max: 100, unit: 'layers', label: 'Skirt height' },
+  raftLayers: { min: 0, max: 20, unit: 'layers', label: 'Raft' },
+  nozzleTemp: { min: 150, max: 500, unit: '°C', label: 'Nozzle temperature' },
+  bedTemp: { min: 0, max: 150, unit: '°C', label: 'Bed temperature' },
+  fanMin: { min: 0, max: 100, unit: '%', label: 'Fan min' },
+  fanMax: { min: 0, max: 100, unit: '%', label: 'Fan max' },
+  fanOffLayers: { min: 0, max: 50, unit: 'layers', label: 'Fan off for first' },
+  fanFullLayer: { min: 0, max: 100, unit: '', label: 'Full fan from layer' },
+  overhangFan: { min: 0, max: 100, unit: '%', label: 'Overhang fan' },
+  auxFan: { min: 0, max: 100, unit: '%', label: 'Side fan' },
+  exhaustFan: { min: 0, max: 100, unit: '%', label: 'Exhaust fan' },
+  speedAll: { min: 10, max: 600, unit: 'mm/s', label: 'Print speed' },
+  speedOuterWall: { min: 10, max: 600, unit: 'mm/s', label: 'Outer wall speed' },
+  speedInnerWall: { min: 10, max: 600, unit: 'mm/s', label: 'Inner wall speed' },
+  speedInfill: { min: 10, max: 600, unit: 'mm/s', label: 'Infill speed' },
+  speedTop: { min: 10, max: 600, unit: 'mm/s', label: 'Top surface speed' },
+  speedBridge: { min: 5, max: 300, unit: 'mm/s', label: 'Bridge speed' },
+  speedGapFill: { min: 5, max: 300, unit: 'mm/s', label: 'Gap fill speed' },
+  speedSupport: { min: 10, max: 300, unit: 'mm/s', label: 'Support speed' },
+  speedSupportInterface: { min: 10, max: 300, unit: 'mm/s', label: 'Support top speed' },
+  speedFirstLayer: { min: 5, max: 200, unit: 'mm/s', label: 'First layer speed' },
+  speedTravel: { min: 30, max: 1000, unit: 'mm/s', label: 'Travel speed' },
+  speedFirstLayerTravel: { min: 20, max: 500, unit: 'mm/s', label: 'First-layer travel' },
+  acceleration: { min: 100, max: 50000, unit: 'mm/s²', label: 'Acceleration' },
+  accelOuterWall: { min: 100, max: 50000, unit: 'mm/s²', label: 'Outer wall acceleration' },
+  accelInnerWall: { min: 100, max: 50000, unit: 'mm/s²', label: 'Inner wall acceleration' },
+  accelTop: { min: 100, max: 50000, unit: 'mm/s²', label: 'Top surface acceleration' },
+  accelInfill: { min: 100, max: 50000, unit: 'mm/s²', label: 'Infill acceleration' },
+  accelBridge: { min: 100, max: 50000, unit: 'mm/s²', label: 'Bridge acceleration' },
+  accelTravel: { min: 100, max: 50000, unit: 'mm/s²', label: 'Travel acceleration' },
+  accelFirstLayer: { min: 100, max: 50000, unit: 'mm/s²', label: 'First-layer acceleration' },
+  // Jerk: 0 means "leave the printer's own"; otherwise at least 1.
+  jerk: { min: 0, max: 50, unit: 'mm/s', label: 'Jerk' },
+  jerkOuterWall: { min: 0, max: 50, unit: 'mm/s', label: 'Outer wall jerk' },
+  jerkInnerWall: { min: 0, max: 50, unit: 'mm/s', label: 'Inner wall jerk' },
+  jerkTop: { min: 0, max: 50, unit: 'mm/s', label: 'Top surface jerk' },
+  jerkInfill: { min: 0, max: 50, unit: 'mm/s', label: 'Infill jerk' },
+  jerkTravel: { min: 0, max: 50, unit: 'mm/s', label: 'Travel jerk' },
+  jerkFirstLayer: { min: 0, max: 50, unit: 'mm/s', label: 'First-layer jerk' },
+  junctionDeviation: { min: 0, max: 0.3, unit: 'mm', label: 'Junction deviation' },
+  accelToDecel: { min: 0, max: 100, unit: '%', label: 'Accel to decel' },
+  maxFlow: { min: 2, max: 100, unit: 'mm³/s', label: 'Max flow' },
+  pressureAdvance: { min: 0, max: 2, unit: '', label: 'Pressure advance' },
+  minLayerTime: { min: 0, max: 120, unit: 's', label: 'Min layer time' },
+  minSpeed: { min: 1, max: 100, unit: 'mm/s', label: 'Slowest allowed' },
+}
+
+/** Why a number can't be used for this setting, or null when it can. `max` narrows the top (a printer's own limit). */
+export function overrideProblem(key: keyof SliceOverrides, v: unknown, max?: number): string | null {
+  const lim = OVERRIDE_LIMITS[key]
+  if (!lim || typeof v !== 'number') return null
+  const top = max !== undefined ? Math.min(lim.max, max) : lim.max
+  const u = lim.unit ? ` ${lim.unit}` : ''
+  if (!Number.isFinite(v)) return `${lim.label} needs a number.`
+  if (key.startsWith('jerk') && v > 0 && v < 1) return `${lim.label} must be 0 (the printer's own) or between 1 and ${top}${u}.`
+  if (v < lim.min || v > top) return `${lim.label} must be between ${lim.min} and ${top}${u}; ${v}${u} ${v < lim.min ? 'would make prints extremely slow or fail' : 'is more than this printer can do'}.`
+  return null
+}
+
+/** The overrides without any number that is out of its sensible range. */
+export function saneOverrides(o: SliceOverrides): SliceOverrides {
+  const out = { ...o } as Record<string, unknown>
+  for (const k of Object.keys(out) as (keyof SliceOverrides)[]) if (overrideProblem(k, out[k])) delete out[k]
+  return out as SliceOverrides
+}
+
+export function overrideKeys(kind: PresetKind, raw: SliceOverrides): Record<string, string | string[]> {
+  const o = saneOverrides(raw)
   const out: Record<string, string | string[]> = {}
   // Settings from the "All settings" window go in every job preset (the engine reads each key from
   // the preset it belongs to); the named settings below then win over them.

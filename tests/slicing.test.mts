@@ -9,6 +9,8 @@ import {
   parseConfigBlock,
   matchMachine,
   overrideKeys,
+  overrideProblem,
+  saneOverrides,
   parseCatalogLog,
   parseDuration,
   parseIni,
@@ -213,7 +215,6 @@ test('overrides: fans can be set or switched off entirely', () => {
     overrideKeys('filament', { fanMin: 30, fanMax: 120, overhangFan: 0, fanOffLayers: 2, fanFullLayer: 4, auxFan: 40, exhaustFan: 70 }),
     {
       fan_min_speed: ['30'],
-      fan_max_speed: ['100'],
       enable_overhang_bridge_fan: ['0'],
       overhang_fan_speed: ['0'],
       additional_cooling_fan_speed: ['40'],
@@ -471,6 +472,28 @@ test('job process and filament files are usable with any printer', () => {
   assert.equal(p.compatible_printers_condition, '')
   const m = buildJobPreset('machine', { name: 'Anycubic Kobra Max 0.4 nozzle' }, {}, '2.5.0.0')
   assert.ok(!('compatible_printers' in m))
+})
+
+test('values far outside sensible ranges are refused and never reach the engine', () => {
+  // The 7-day print: every acceleration at 30 mm/s².
+  assert.match(overrideProblem('acceleration', 30)!, /between 100 and 50000 mm\/s²/)
+  assert.equal(overrideProblem('acceleration', 800), null)
+  assert.match(overrideProblem('accelOuterWall', 50)!, /extremely slow/)
+  assert.match(overrideProblem('speedAll', 3)!, /between 10 and 600/)
+  assert.match(overrideProblem('speedTravel', 2000)!, /more than this printer can do/)
+  assert.equal(overrideProblem('jerk', 0), null, '0 leaves the printer its own jerk')
+  assert.match(overrideProblem('jerk', 0.5)!, /0 \(the printer's own\) or between 1/)
+  assert.match(overrideProblem('nozzleTemp', 260, 250)!, /between 150 and 250/, "a printer's own limit narrows the top")
+  assert.equal(overrideProblem('nozzleTemp', 240, 250), null)
+  assert.match(overrideProblem('fanMax', 120)!, /between 0 and 100 %/)
+  assert.match(overrideProblem('maxFlow', 0.5)!, /Max flow/)
+  assert.equal(overrideProblem('brimType', 'ears'), null, 'only numbers are checked')
+  const clean = saneOverrides({ acceleration: 30, speedAll: 45, jerk: 8, brimType: 'outer', extra: { a: '1' } })
+  assert.deepEqual(clean, { speedAll: 45, jerk: 8, brimType: 'outer', extra: { a: '1' } })
+  const p = overrideKeys('process', { acceleration: 30, speedOuterWall: 35 })
+  assert.equal(p.default_acceleration, undefined, 'the preset keeps its own acceleration')
+  assert.equal(p.outer_wall_acceleration, undefined)
+  assert.equal(p.outer_wall_speed, '35')
 })
 
 console.log(`\n${passed} slicing tests passed`)

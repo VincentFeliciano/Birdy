@@ -4,7 +4,7 @@
   import { fmtBytes } from '../../app/format'
   import { isFdmKind } from '../../types/slicing'
   import type { BrimType, PresetRef, SkirtMode, SliceOverrides, SupportMode } from '../../types/slicing'
-  import { fitsMachine } from '../../../electron/slicing/presets'
+  import { fitsMachine, OVERRIDE_LIMITS, overrideProblem } from '../../../electron/slicing/presets'
   import PrinterManager from './PrinterManager.svelte'
   import PricesEditor from '../../components/PricesEditor.svelte'
   import { fmtMoney, prices, printCost } from '../../app/costs.svelte'
@@ -155,6 +155,60 @@
     const v = (e.currentTarget as HTMLInputElement).value.trim()
     return v === '' ? undefined : Number(v)
   }
+  /** Why the last number typed was refused; shown until the next good change. */
+  let rangeMsg = $state<string | null>(null)
+  /** Sets a number setting, refusing values outside its sensible range (and the printer's own limits). */
+  function setNum(key: NumKey, e: Event) {
+    const v = num(e)
+    const max = key === 'nozzleTemp' ? maxNozzle : key === 'bedTemp' ? maxBed : undefined
+    const problem = v === undefined ? null : overrideProblem(key, v, max)
+    if (problem) {
+      const el = e.currentTarget as HTMLInputElement
+      el.value = o[key] === undefined ? '' : String(o[key])
+      rangeMsg = `${problem} Kept ${o[key] === undefined ? 'the preset value' : `${o[key]}`}.`
+      return
+    }
+    rangeMsg = null
+    setOverride(key, v)
+  }
+  /** Lowest value the arrows go to: the setting's own sensible minimum. */
+  const lo = (key: NumKey, fallback: number) => OVERRIDE_LIMITS[key]?.min ?? fallback
+
+  // ---- Long prints --------------------------------------------------------------
+  const DAY = 24 * 3600
+  /** The effective value of a setting: what you typed, else the preset's. */
+  const eff = (key: keyof SliceOverrides) => {
+    const mine = o[key]
+    if (typeof mine === 'number') return mine
+    const k = PRESET_KEY[key]
+    const v = k ? Number.parseFloat(presetVals[k]?.split(',')[0] ?? '') : NaN
+    return Number.isFinite(v) ? v : undefined
+  }
+  /** Settings that make a print much slower than it needs to be, to name when a slice runs long. */
+  const slowCauses = $derived.by(() => {
+    const out: string[] = []
+    const below = (key: keyof SliceOverrides, limit: number, text: (v: number) => string) => {
+      const v = eff(key)
+      if (v !== undefined && v > 0 && v < limit) out.push(text(v))
+    }
+    below('acceleration', 300, (v) => `Acceleration is ${v} mm/s² (most printers: 500–3000)`)
+    below('accelOuterWall', 200, (v) => `Outer wall acceleration is ${v} mm/s²`)
+    below('accelInfill', 300, (v) => `Infill acceleration is ${v} mm/s²`)
+    below('speedAll', 25, (v) => `Print speed is ${v} mm/s`)
+    below('speedOuterWall', 20, (v) => `Outer wall speed is ${v} mm/s`)
+    below('speedInfill', 30, (v) => `Infill speed is ${v} mm/s`)
+    below('speedTravel', 60, (v) => `Travel speed is ${v} mm/s`)
+    below('maxFlow', 5, (v) => `Max flow is ${v} mm³/s`)
+    const lh = eff('layerHeight')
+    if (lh !== undefined && lh < 0.12) out.push(`Layer height is ${lh} mm (fine layers take much longer)`)
+    if ((o.infill ?? 0) >= 50) out.push(`Infill is ${o.infill}%`)
+    return out
+  })
+  const fmtDays = (s: number) => {
+    const d = Math.floor(s / DAY)
+    const h = Math.round((s % DAY) / 3600)
+    return `${d} day${d === 1 ? '' : 's'}${h ? ` ${h} h` : ''}`
+  }
   const pct = (n: number) => `${Math.round(n * 100)}%`
   const fmtTime = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`)
   const usbPct = $derived(usb.total ? usb.sent / usb.total : 0)
@@ -164,7 +218,7 @@
 {#snippet nf(key: NumKey, label: string, unit: string, min: number, max: number, step: number, title = '')}
   <label class="field" title={title || undefined}>
     <span>{label} <i>{unit}</i></span>
-    <input type="number" {min} {max} {step} placeholder={ph(key)} value={o[key] ?? ''} onchange={(e) => setOverride(key, num(e))} />
+    <input type="number" min={lo(key, min)} {max} {step} placeholder={ph(key)} value={o[key] ?? ''} onchange={(e) => setNum(key, e)} />
   </label>
 {/snippet}
 
@@ -172,6 +226,13 @@
   <PrinterManager />
 {:else}
   <div class="scroll">
+    {#if rangeMsg}
+      <div class="range-msg" role="alert">
+        <Icon name="alert" size={14} />
+        <span>{rangeMsg}</span>
+        <button class="icon-btn" aria-label="Dismiss" title="Dismiss" onclick={() => (rangeMsg = null)}><Icon name="close" size={11} /></button>
+      </div>
+    {/if}
     {#if sl.portChoices}
       <section class="picker">
         <h3 class="hud-label">Choose the printer’s USB port</h3>
@@ -311,15 +372,15 @@
           <div class="grid2">
             <label class="field">
               <span>Layer height <i>mm</i></span>
-              <input type="number" min="0.04" max="1.2" step="0.04" placeholder="preset" value={o.layerHeight ?? ''} onchange={(e) => setOverride('layerHeight', num(e))} />
+              <input type="number" min="0.04" max="1.2" step="0.04" placeholder="preset" value={o.layerHeight ?? ''} onchange={(e) => setNum('layerHeight', e)} />
             </label>
             <label class="field">
               <span>Infill <i>%</i></span>
-              <input type="number" min="0" max="100" step="5" placeholder="preset" value={o.infill ?? ''} onchange={(e) => setOverride('infill', num(e))} />
+              <input type="number" min="0" max="100" step="5" placeholder="preset" value={o.infill ?? ''} onchange={(e) => setNum('infill', e)} />
             </label>
             <label class="field">
               <span>Walls</span>
-              <input type="number" min="1" max="20" step="1" placeholder="preset" value={o.walls ?? ''} onchange={(e) => setOverride('walls', num(e))} />
+              <input type="number" min="1" max="20" step="1" placeholder="preset" value={o.walls ?? ''} onchange={(e) => setNum('walls', e)} />
             </label>
             <label class="field">
               <span>Supports</span>
@@ -349,20 +410,20 @@
             </label>
             <label class="field" title="Overhangs flatter than this angle, measured from the horizontal, get supports">
               <span>Support below <i>°</i></span>
-              <input type="number" min="0" max="90" step="5" placeholder="preset" disabled={o.supports === 'off'} value={o.supportAngle ?? ''} onchange={(e) => setOverride('supportAngle', num(e))} />
+              <input type="number" min="0" max="90" step="5" placeholder="preset" disabled={o.supports === 'off'} value={o.supportAngle ?? ''} onchange={(e) => setNum('supportAngle', e)} />
             </label>
             <label class="field" title="Layers of raft printed under the model">
               <span>Raft <i>layers</i></span>
-              <input type="number" min="0" max="20" step="1" placeholder="preset" value={o.raftLayers ?? ''} onchange={(e) => setOverride('raftLayers', num(e))} />
+              <input type="number" min="0" max="20" step="1" placeholder="preset" value={o.raftLayers ?? ''} onchange={(e) => setNum('raftLayers', e)} />
             </label>
             <label class="field">
               <span>Nozzle <i>°C</i></span>
-              <input type="number" min="150" max={maxNozzle} step="5" placeholder="preset" value={o.nozzleTemp ?? ''} onchange={(e) => setOverride('nozzleTemp', num(e))} />
+              <input type="number" min="150" max={maxNozzle} step="5" placeholder="preset" value={o.nozzleTemp ?? ''} onchange={(e) => setNum('nozzleTemp', e)} />
               {#if (o.nozzleTemp ?? 0) > maxNozzle}<em class="warn">Over this printer's {maxNozzle} °C</em>{/if}
             </label>
             <label class="field">
               <span>Bed <i>°C</i></span>
-              <input type="number" min="0" max={maxBed} step="5" placeholder={machine.heatedBed === false ? 'no heated bed' : 'preset'} disabled={machine.heatedBed === false} value={o.bedTemp ?? ''} onchange={(e) => setOverride('bedTemp', num(e))} />
+              <input type="number" min="0" max={maxBed} step="5" placeholder={machine.heatedBed === false ? 'no heated bed' : 'preset'} disabled={machine.heatedBed === false} value={o.bedTemp ?? ''} onchange={(e) => setNum('bedTemp', e)} />
               {#if (o.bedTemp ?? 0) > maxBed}<em class="warn">Over this bed's {maxBed} °C</em>{/if}
             </label>
           </div>
@@ -479,11 +540,11 @@
             </label>
             <label class="field">
               <span>Brim width <i>mm</i></span>
-              <input type="number" min="1" max="30" step="1" placeholder="preset" disabled={brimType === 'none'} value={o.brimWidth ?? ''} onchange={(e) => setOverride('brimWidth', num(e))} />
+              <input type="number" min="1" max="30" step="1" placeholder="preset" disabled={brimType === 'none'} value={o.brimWidth ?? ''} onchange={(e) => setNum('brimWidth', e)} />
             </label>
             <label class="field" title="Space between the brim and the model; a small gap makes the brim easier to peel off">
               <span>Brim gap <i>mm</i></span>
-              <input type="number" min="0" max="2" step="0.05" placeholder="preset" disabled={brimType === 'none'} value={o.brimGap ?? ''} onchange={(e) => setOverride('brimGap', num(e))} />
+              <input type="number" min="0" max="2" step="0.05" placeholder="preset" disabled={brimType === 'none'} value={o.brimGap ?? ''} onchange={(e) => setNum('brimGap', e)} />
             </label>
             <label class="field" title="A skirt is a loop around the model that primes the nozzle. A draft shield is a skirt as tall as the model that keeps drafts off ABS and ASA.">
               <span>Skirt</span>
@@ -496,15 +557,15 @@
             </label>
             <label class="field">
               <span>Skirt loops</span>
-              <input type="number" min="1" max="20" step="1" placeholder="1" disabled={!o.skirt || o.skirt === 'off'} value={o.skirtLoops ?? ''} onchange={(e) => setOverride('skirtLoops', num(e))} />
+              <input type="number" min="1" max="20" step="1" placeholder="1" disabled={!o.skirt || o.skirt === 'off'} value={o.skirtLoops ?? ''} onchange={(e) => setNum('skirtLoops', e)} />
             </label>
             <label class="field">
               <span>Skirt distance <i>mm</i></span>
-              <input type="number" min="0" max="60" step="0.5" placeholder="preset" disabled={o.skirt === 'off'} value={o.skirtDistance ?? ''} onchange={(e) => setOverride('skirtDistance', num(e))} />
+              <input type="number" min="0" max="60" step="0.5" placeholder="preset" disabled={o.skirt === 'off'} value={o.skirtDistance ?? ''} onchange={(e) => setNum('skirtDistance', e)} />
             </label>
             <label class="field">
               <span>Skirt height <i>layers</i></span>
-              <input type="number" min="1" max="100" step="1" placeholder="preset" disabled={o.skirt === 'off' || o.skirt === 'shield'} value={o.skirtHeight ?? ''} onchange={(e) => setOverride('skirtHeight', num(e))} />
+              <input type="number" min="1" max="100" step="1" placeholder="preset" disabled={o.skirt === 'off' || o.skirt === 'shield'} value={o.skirtHeight ?? ''} onchange={(e) => setNum('skirtHeight', e)} />
             </label>
           </div>
           <h4 class="sub-head">Fans</h4>
@@ -518,31 +579,31 @@
             </label>
             <label class="field" title="Side or auxiliary part-cooling fan, on printers that have one">
               <span>Side / aux fan <i>%</i></span>
-              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.auxFan ?? '')} onchange={(e) => setOverride('auxFan', num(e))} />
+              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.auxFan ?? '')} onchange={(e) => setNum('auxFan', e)} />
             </label>
             <label class="field">
               <span>Fan min <i>%</i></span>
-              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.fanMin ?? '')} onchange={(e) => setOverride('fanMin', num(e))} />
+              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.fanMin ?? '')} onchange={(e) => setNum('fanMin', e)} />
             </label>
             <label class="field">
               <span>Fan max <i>%</i></span>
-              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.fanMax ?? '')} onchange={(e) => setOverride('fanMax', num(e))} />
+              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.fanMax ?? '')} onchange={(e) => setNum('fanMax', e)} />
             </label>
             <label class="field" title="Fan speed while printing overhangs and bridges. 0 turns the extra overhang cooling off.">
               <span>Overhangs, bridges <i>%</i></span>
-              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.overhangFan ?? '')} onchange={(e) => setOverride('overhangFan', num(e))} />
+              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.overhangFan ?? '')} onchange={(e) => setNum('overhangFan', e)} />
             </label>
             <label class="field">
               <span>Off for first <i>layers</i></span>
-              <input type="number" min="0" max="50" step="1" placeholder="preset" disabled={o.coolingOff} value={o.fanOffLayers ?? ''} onchange={(e) => setOverride('fanOffLayers', num(e))} />
+              <input type="number" min="0" max="50" step="1" placeholder="preset" disabled={o.coolingOff} value={o.fanOffLayers ?? ''} onchange={(e) => setNum('fanOffLayers', e)} />
             </label>
             <label class="field">
               <span>Full speed from <i>layer</i></span>
-              <input type="number" min="0" max="100" step="1" placeholder="preset" disabled={o.coolingOff} value={o.fanFullLayer ?? ''} onchange={(e) => setOverride('fanFullLayer', num(e))} />
+              <input type="number" min="0" max="100" step="1" placeholder="preset" disabled={o.coolingOff} value={o.fanFullLayer ?? ''} onchange={(e) => setNum('fanFullLayer', e)} />
             </label>
             <label class="field" title="Chamber exhaust or air-filter fan during the print, on printers that have one. 0 keeps it off.">
               <span>Exhaust fan <i>%</i></span>
-              <input type="number" min="0" max="100" step="5" placeholder="preset" value={o.exhaustFan ?? ''} onchange={(e) => setOverride('exhaustFan', num(e))} />
+              <input type="number" min="0" max="100" step="5" placeholder="preset" value={o.exhaustFan ?? ''} onchange={(e) => setNum('exhaustFan', e)} />
             </label>
           </div>
           <p class="hint">The hotend heatsink fan is not here on purpose: the printer runs it whenever the nozzle is hot, and turning it off would clog the nozzle.</p>
@@ -567,6 +628,24 @@
               <span class="k">Cost</span><span class="v mono">{fmtMoney(printCost('fdm', summary.filamentG, summary.printSeconds)?.total)}</span>
             </div>
           </div>
+          {#if (summary.printSeconds ?? 0) > DAY}
+            <div class="long-print" role="alert">
+              <p class="warn-line">
+                <Icon name="alert" size={14} />
+                <span><b>This print would take {fmtDays(summary.printSeconds!)}.</b> Anything over a day is worth a second look before you start it.</span>
+              </p>
+              {#if slowCauses.length}
+                <p class="sub-line">These settings slow it down:</p>
+                <ul>{#each slowCauses as c}<li>{c}</li>{/each}</ul>
+                <p class="sub-line">Change them in Adjust (blank goes back to the preset), then slice again.</p>
+              {:else}
+                <p class="sub-line">
+                  No setting looks unusually slow, so it is probably the model's size: a bigger nozzle or thicker layers, less infill, fewer walls, or
+                  printing it smaller would all shorten it.
+                </p>
+              {/if}
+            </div>
+          {/if}
           <PricesEditor kind="fdm" />
           <div class="row">
             <button class="ghost" class:on={sl.preview.on} disabled={!sl.preview.ready} onclick={() => setPreviewOn(!sl.preview.on)}>
@@ -879,6 +958,61 @@
   select:disabled,
   input:disabled {
     opacity: 0.5;
+  }
+  .range-msg {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: var(--r-md);
+    border: 1px solid rgba(255, 122, 89, 0.6);
+    background: color-mix(in srgb, var(--panel) 88%, #ff7a59);
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .range-msg > :global(svg) {
+    flex: none;
+    margin-top: 1px;
+    color: #ff7a59;
+  }
+  .range-msg span {
+    flex: 1;
+  }
+  .long-print {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: var(--r-md);
+    border: 1px solid rgba(255, 122, 89, 0.6);
+    background: rgba(255, 122, 89, 0.08);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .long-print .warn-line {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 4px;
+    line-height: 1.4;
+  }
+  .long-print .warn-line :global(svg) {
+    flex: none;
+    margin-top: 1px;
+    color: #ff7a59;
+  }
+  .long-print b {
+    color: var(--text);
+  }
+  .long-print .sub-line {
+    margin: 4px 0;
+  }
+  .long-print ul {
+    margin: 2px 0 4px;
+    padding-left: 18px;
+    color: var(--text);
   }
   .sub-head {
     margin: 8px 0 6px;
