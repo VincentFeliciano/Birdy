@@ -18,6 +18,8 @@ export interface ImportResult {
   models: number
   /** The model to open right away (the only one, or null when there are several). */
   openRel: string | null
+  /** Every model unpacked from an archive (paths inside the Models folder), for opening them together. */
+  modelRels?: string[]
   /** It was already in the Models folder. */
   existing: boolean
   /** Entries left out, with the reason. */
@@ -180,7 +182,8 @@ async function matches(folder: string, planned: Planned[]) {
 
 function result(root: string, folder: string, planned: Planned[], existing: boolean, skipped: string[], count = planned.length): ImportResult {
   const only = count === 1 ? toRel(root, join(folder, ...planned[0]!.parts)) : null
-  return { kind: 'folder', rel: toRel(root, folder), models: count, openRel: only, existing, skipped }
+  const modelRels = planned.slice(0, count).map((p) => toRel(root, join(folder, ...p.parts)))
+  return { kind: 'folder', rel: toRel(root, folder), models: count, openRel: only, modelRels, existing, skipped }
 }
 
 export interface FolderEntry {

@@ -1,5 +1,5 @@
 import type { ModelsEntry, ModelsImport } from '../../types/ipc'
-import { addToPlate, openModelFile, ws } from '../workspace/store.svelte'
+import { addToPlate, arrangePlate, openModelFile, ws } from '../workspace/store.svelte'
 import { queueThumbs } from './thumbs'
 
 /** The Models panel: browsing Documents/Boaty/Models. */
@@ -194,6 +194,34 @@ export async function openModel(rel: string): Promise<boolean> {
   }
 }
 
+/** A ZIP with this many models or fewer opens them all on one plate; more just shows the folder. */
+export const ZIP_OPEN_MAX = 10
+
+/** Opens every model from a downloaded ZIP on one plate and lays them out. */
+async function openAllFromZip(r: ModelsImport) {
+  const rels = r.modelRels ?? []
+  if (rels.length < 2) return
+  if (rels.length > ZIP_OPEN_MAX) {
+    models.notice = `Unpacked ${r.models} models into ${r.rel}. That's too many to put on one plate, so pick the ones you want.`
+    return
+  }
+  if (!(await openModel(rels[0]!))) return
+  if (ws.layout === 'browse') ws.layout = 'split'
+  let added = 1
+  for (const rel of rels.slice(1)) {
+    try {
+      await addToPlate(await window.api.models.read(rel))
+      added++
+    } catch {
+      /* one bad file shouldn't stop the rest */
+    }
+  }
+  const onOnePlate = arrangePlate()
+  ws.notice = {
+    text: `Opened ${added} models from ${r.rel} on one plate${onOnePlate ? '' : " (they don't all fit; remove some with Delete)"}. Ctrl+Z undoes each one.`,
+  }
+}
+
 function onImported(r: ModelsImport) {
   const parent = r.rel.split('/').slice(0, -1).join('/')
   if (r.kind === 'folder') {
@@ -205,6 +233,7 @@ function onImported(r: ModelsImport) {
       ? `Already unpacked: ${r.rel}`
       : `Unpacked ${r.models} model${r.models === 1 ? '' : 's'} into ${r.rel}${r.skipped.length ? ` (${r.skipped.length} left out)` : ''}`
     if (r.openRel) void openModel(r.openRel)
+    else void openAllFromZip(r)
   } else {
     // Single files already open in the workspace from the download; just point them out.
     if (models.cwd === parent) void refresh()

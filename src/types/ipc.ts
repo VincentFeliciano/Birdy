@@ -68,6 +68,8 @@ export interface ModelsImport {
   rel: string
   models: number
   openRel: string | null
+  /** Every model unpacked from an archive. */
+  modelRels?: string[]
   existing: boolean
   skipped: string[]
 }

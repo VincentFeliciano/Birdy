@@ -121,6 +121,7 @@ try {
     assert.equal(r!.rel, 'Planter-123')
     assert.equal(r!.models, 3)
     assert.equal(r!.openRel, null, 'several models: the panel opens instead of one model')
+    assert.deepEqual([...r!.modelRels!].sort(), ['Planter-123/parts/drip ring.3mf', 'Planter-123/pot.stl', 'Planter-123/saucer.STL'], 'every model is listed so they all open on one plate')
     assert.deepEqual(files(join(root, 'Planter-123')).sort(), ['parts/drip ring.3mf', 'pot.stl', 'saucer.STL'])
     assert.deepEqual(readFileSync(join(root, 'Planter-123', 'pot.stl')), stl('pot'))
     assert.deepEqual(r!.skipped, [])
