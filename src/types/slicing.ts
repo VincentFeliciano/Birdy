@@ -99,6 +99,8 @@ export interface SliceOverrides {
   /** Skirt height in layers. */
   skirtHeight?: number
   raftLayers?: number
+  /** One print speed for walls, infill, top surfaces, gap fill and supports, mm/s. The per-feature ones win over it. */
+  speedAll?: number
   /** Print speeds, mm/s. */
   speedOuterWall?: number
   speedInnerWall?: number
@@ -127,6 +129,11 @@ export interface SliceOverrides {
   /** Jerk for all moves, mm/s (Marlin, RepRapFirmware). 0 leaves the printer's own. */
   jerk?: number
   jerkOuterWall?: number
+  jerkInnerWall?: number
+  jerkTop?: number
+  jerkInfill?: number
+  jerkTravel?: number
+  jerkFirstLayer?: number
   /** Marlin junction deviation, mm. Used instead of jerk when above 0. */
   junctionDeviation?: number
   /** Klipper: max_accel_to_decel as a % of the acceleration (smoother corners). 0 turns it off. */

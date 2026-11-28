@@ -130,6 +130,8 @@ export function overrideKeys(kind: PresetKind, o: SliceOverrides): Record<string
     const speed = (keys: string[], v: number | undefined) => {
       if (v !== undefined && v > 0) for (const k of keys) out[k] = num(v)
     }
+    // One speed for most printing first, then any per-feature speeds on top.
+    speed(['outer_wall_speed', 'inner_wall_speed', 'sparse_infill_speed', 'internal_solid_infill_speed', 'top_surface_speed', 'gap_infill_speed', 'support_speed'], o.speedAll)
     speed(['outer_wall_speed'], o.speedOuterWall)
     speed(['inner_wall_speed'], o.speedInnerWall)
     speed(['sparse_infill_speed', 'internal_solid_infill_speed'], o.speedInfill)
@@ -161,6 +163,11 @@ export function overrideKeys(kind: PresetKind, o: SliceOverrides): Record<string
     }
     jerk(['default_jerk', 'outer_wall_jerk', 'inner_wall_jerk', 'top_surface_jerk', 'infill_jerk', 'travel_jerk', 'initial_layer_jerk'], o.jerk)
     jerk(['outer_wall_jerk'], o.jerkOuterWall)
+    jerk(['inner_wall_jerk'], o.jerkInnerWall)
+    jerk(['top_surface_jerk'], o.jerkTop)
+    jerk(['infill_jerk'], o.jerkInfill)
+    jerk(['travel_jerk'], o.jerkTravel)
+    jerk(['initial_layer_jerk'], o.jerkFirstLayer)
     if (o.junctionDeviation !== undefined && o.junctionDeviation >= 0) out.default_junction_deviation = num(o.junctionDeviation)
     if (o.accelToDecel !== undefined) {
       out.accel_to_decel_enable = o.accelToDecel > 0 ? '1' : '0'

@@ -187,6 +187,17 @@ test('overrides: per-move acceleration, jerk, junction deviation, Klipper smooth
   assert.equal(overrideKeys('process', { jerk: 0 }).default_jerk, '0')
 })
 
+test('overrides: one print speed and one jerk, with per-move values winning', () => {
+  const p = overrideKeys('process', { speedAll: 45, speedOuterWall: 30, jerk: 8, jerkTravel: 12, jerkFirstLayer: 4 })
+  for (const k of ['inner_wall_speed', 'sparse_infill_speed', 'internal_solid_infill_speed', 'top_surface_speed', 'gap_infill_speed', 'support_speed']) assert.equal(p[k], '45', k)
+  assert.equal(p.outer_wall_speed, '30')
+  assert.equal(p.bridge_speed, undefined, 'bridges keep their own slower speed')
+  assert.equal(p.initial_layer_speed, undefined, 'and so does the first layer')
+  assert.equal(p.inner_wall_jerk, '8')
+  assert.equal(p.travel_jerk, '12')
+  assert.equal(p.initial_layer_jerk, '4')
+})
+
 test('the Mega X ships gentler than the i3 Mega S it is built on', () => {
   assert.ok(BUILTIN_REV >= 2)
   const std = BUILTIN_PRESETS.find((b) => b.json.name === '0.20mm Standard @Anycubic Mega X 0.4 nozzle')!.json

@@ -78,6 +78,73 @@
   const hasOverrides = $derived(Object.keys(o).length > 0)
   const extraCount = $derived(Object.keys(o.extra ?? {}).length)
   const brimType = $derived<BrimType | undefined>(o.brimType ?? (o.brim === undefined ? undefined : o.brim ? 'outer' : 'none'))
+  /** Settings in "Fine tune each move": counted so a set one is never hidden in a closed fold-out. */
+  const FINE: (keyof SliceOverrides)[] = [
+    'speedOuterWall', 'speedInnerWall', 'speedInfill', 'speedTop', 'speedBridge', 'speedGapFill', 'speedSmallPerimeter', 'speedFirstLayerTravel',
+    'speedSupport', 'speedSupportInterface', 'slowOverhangs', 'accelOuterWall', 'accelInnerWall', 'accelInfill', 'accelTop', 'accelBridge',
+    'accelTravel', 'accelFirstLayer', 'jerkOuterWall', 'jerkInnerWall', 'jerkInfill', 'jerkTop', 'jerkTravel', 'jerkFirstLayer',
+    'junctionDeviation', 'accelToDecel', 'pressureAdvance', 'coolingSlowdown', 'minLayerTime', 'minSpeed',
+  ]
+  const fineCount = $derived(FINE.filter((k) => o[k] !== undefined).length)
+  /** The engine setting each field stands for, so blank fields can show the preset's own value. */
+  const PRESET_KEY: Partial<Record<keyof SliceOverrides, string>> = {
+    speedAll: 'inner_wall_speed',
+    acceleration: 'default_acceleration',
+    jerk: 'default_jerk',
+    speedFirstLayer: 'initial_layer_speed',
+    speedTravel: 'travel_speed',
+    maxFlow: 'filament_max_volumetric_speed',
+    speedOuterWall: 'outer_wall_speed',
+    speedInnerWall: 'inner_wall_speed',
+    speedInfill: 'sparse_infill_speed',
+    speedTop: 'top_surface_speed',
+    speedBridge: 'bridge_speed',
+    speedGapFill: 'gap_infill_speed',
+    speedSmallPerimeter: 'small_perimeter_speed',
+    speedFirstLayerTravel: 'initial_layer_travel_speed',
+    speedSupport: 'support_speed',
+    speedSupportInterface: 'support_interface_speed',
+    accelOuterWall: 'outer_wall_acceleration',
+    accelInnerWall: 'inner_wall_acceleration',
+    accelInfill: 'sparse_infill_acceleration',
+    accelTop: 'top_surface_acceleration',
+    accelBridge: 'bridge_acceleration',
+    accelTravel: 'travel_acceleration',
+    accelFirstLayer: 'initial_layer_acceleration',
+    jerkOuterWall: 'outer_wall_jerk',
+    jerkInnerWall: 'inner_wall_jerk',
+    jerkInfill: 'infill_jerk',
+    jerkTop: 'top_surface_jerk',
+    jerkTravel: 'travel_jerk',
+    jerkFirstLayer: 'initial_layer_jerk',
+    junctionDeviation: 'default_junction_deviation',
+    accelToDecel: 'accel_to_decel_factor',
+    pressureAdvance: 'pressure_advance',
+    minLayerTime: 'slow_down_layer_time',
+    minSpeed: 'slow_down_min_speed',
+  }
+  /** What the chosen presets set, read back from the engine (cached there per printer, process and filament). */
+  let presetVals = $state<Record<string, string>>({})
+  $effect(() => {
+    const req = { machine: sl.settings.machine, process: sl.settings.process || undefined, filament: sl.settings.filament || undefined }
+    presetVals = {}
+    if (!catalog || !req.machine) return
+    let gone = false
+    window.api.engine
+      .resolve(req)
+      .then((v) => {
+        if (!gone) presetVals = v
+      })
+      .catch(() => {})
+    return () => {
+      gone = true
+    }
+  })
+  function ph(key: keyof SliceOverrides) {
+    const k = PRESET_KEY[key]
+    const v = k ? presetVals[k]?.split(',')[0]?.trim() : undefined
+    return v ? `${v} (preset)` : 'preset'
+  }
   type NumKey = { [K in keyof SliceOverrides]-?: NonNullable<SliceOverrides[K]> extends number ? K : never }[keyof SliceOverrides]
   function setBrim(t: BrimType | undefined) {
     setOverride('brim', undefined)
@@ -97,7 +164,7 @@
 {#snippet nf(key: NumKey, label: string, unit: string, min: number, max: number, step: number, title = '')}
   <label class="field" title={title || undefined}>
     <span>{label} <i>{unit}</i></span>
-    <input type="number" {min} {max} {step} placeholder="preset" value={o[key] ?? ''} onchange={(e) => setOverride(key, num(e))} />
+    <input type="number" {min} {max} {step} placeholder={ph(key)} value={o[key] ?? ''} onchange={(e) => setOverride(key, num(e))} />
   </label>
 {/snippet}
 
@@ -300,7 +367,15 @@
             </label>
           </div>
           <h4 class="sub-head">Speeds</h4>
-          <p class="hint">Older or wobbly printers print cleaner when slowed down. Blank keeps the preset's value.</p>
+          <p class="hint">The main settings for every move. Older or wobbly printers print cleaner when slowed down. Blank keeps the preset's value.</p>
+          <div class="grid2">
+            {@render nf('speedAll', 'Print speed', 'mm/s', 5, 500, 5, 'One speed for walls, infill, top surfaces, gap fill and supports. Fine tuning below can set any of them on its own.')}
+            {@render nf('acceleration', 'Acceleration', 'mm/s²', 50, 50000, 50, 'How hard the printer speeds up and slows down, for every kind of move. Lower stops shaking (ringing, layer shifts) on big bed-slingers.')}
+            {@render nf('jerk', 'Jerk', 'mm/s', 0, 50, 1, 'How much speed may change at a corner without slowing first (Marlin, RepRapFirmware). Lower is smoother; 0 leaves the printer its own.')}
+            {@render nf('speedFirstLayer', 'First layer', 'mm/s', 5, 200, 5, 'A slow first layer sticks better')}
+            {@render nf('speedTravel', 'Travel', 'mm/s', 10, 1000, 10, 'Moves without printing. Capped at the printer’s own limit.')}
+            {@render nf('maxFlow', 'Max flow', 'mm³/s', 1, 100, 0.5, 'The most plastic the hotend can melt; every speed is capped to stay under it. Stock hotends: about 10–15 for PLA.')}
+          </div>
           <details class="more units">
             <summary>What do mm/s and mm/s² mean?</summary>
             <dl>
@@ -316,51 +391,30 @@
               <dd>The arrows step by 50 and stop at 50; you can type any value. Below about 200 prints get very slow for little gain.</dd>
               <dt>Jerk <i>mm/s</i></dt>
               <dd>How much speed may change instantly at a corner without slowing down first. Lower is smoother. Marlin printers: 5–10.</dd>
+              <dt>Max flow <i>mm³/s</i></dt>
+              <dd>Cubic millimetres of plastic per second. Speed × layer height × line width can't go above it, so it caps every speed at once.</dd>
             </dl>
           </details>
-          <div class="grid2">
-            <label class="field" title="The outside of the model: slower looks smoother">
-              <span>Outer wall <i>mm/s</i></span>
-              <input type="number" min="5" max="500" step="5" placeholder="preset" value={o.speedOuterWall ?? ''} onchange={(e) => setOverride('speedOuterWall', num(e))} />
-            </label>
-            <label class="field">
-              <span>Inner walls <i>mm/s</i></span>
-              <input type="number" min="5" max="500" step="5" placeholder="preset" value={o.speedInnerWall ?? ''} onchange={(e) => setOverride('speedInnerWall', num(e))} />
-            </label>
-            <label class="field">
-              <span>Infill <i>mm/s</i></span>
-              <input type="number" min="5" max="500" step="5" placeholder="preset" value={o.speedInfill ?? ''} onchange={(e) => setOverride('speedInfill', num(e))} />
-            </label>
-            <label class="field">
-              <span>Top surface <i>mm/s</i></span>
-              <input type="number" min="5" max="500" step="5" placeholder="preset" value={o.speedTop ?? ''} onchange={(e) => setOverride('speedTop', num(e))} />
-            </label>
-            <label class="field" title="A slow first layer sticks better">
-              <span>First layer <i>mm/s</i></span>
-              <input type="number" min="5" max="200" step="5" placeholder="preset" value={o.speedFirstLayer ?? ''} onchange={(e) => setOverride('speedFirstLayer', num(e))} />
-            </label>
-            <label class="field" title="Moves without printing">
-              <span>Travel <i>mm/s</i></span>
-              <input type="number" min="10" max="1000" step="10" placeholder="preset" value={o.speedTravel ?? ''} onchange={(e) => setOverride('speedTravel', num(e))} />
-            </label>
-            <label class="field" title="How hard the printer speeds up and slows down, for every kind of move. Lower stops shaking (ringing, layer shifts) on big bed-slingers.">
-              <span>Acceleration <i>mm/s²</i></span>
-              <input type="number" min="50" max="50000" step="50" placeholder="preset" value={o.acceleration ?? ''} onchange={(e) => setOverride('acceleration', num(e))} />
-            </label>
-          </div>
-          <details class="more">
-            <summary>Fine tuning: more speeds, acceleration, jerk and smoothing</summary>
-            <h5 class="mini-head">More speeds</h5>
+          <details class="more" open={fineCount > 0}>
+            <summary>Fine tune each move{fineCount ? ` · ${fineCount} set` : ''}</summary>
+            <p class="hint small">Each of these wins over the main setting above for that one kind of move.</p>
+            <h5 class="mini-head">Speed <i>mm/s</i></h5>
             <div class="grid2">
+              {@render nf('speedOuterWall', 'Outer wall', 'mm/s', 5, 500, 5, 'The outside of the model: slower looks smoother')}
+              {@render nf('speedInnerWall', 'Inner walls', 'mm/s', 5, 500, 5)}
+              {@render nf('speedInfill', 'Infill', 'mm/s', 5, 500, 5)}
+              {@render nf('speedTop', 'Top surface', 'mm/s', 5, 500, 5)}
               {@render nf('speedBridge', 'Bridges', 'mm/s', 5, 300, 5)}
-              {@render nf('speedGapFill', 'Gap fill', 'mm/s', 5, 300, 5)}
-              {@render nf('speedSupport', 'Supports', 'mm/s', 5, 300, 5)}
-              {@render nf('speedSupportInterface', 'Support top', 'mm/s', 5, 300, 5, 'Where the support touches the model')}
+              {@render nf('speedGapFill', 'Gap fill', 'mm/s', 5, 300, 5, 'Thin gaps between walls')}
               <label class="field" title="Holes and thin posts. A number is mm/s; with % it is that share of the outer wall speed.">
                 <span>Small perimeters <i>mm/s or %</i></span>
-                <input type="text" placeholder="preset" value={o.speedSmallPerimeter ?? ''} onchange={(e) => setOverride('speedSmallPerimeter', e.currentTarget.value.trim() || undefined)} />
+                <input type="text" placeholder={ph('speedSmallPerimeter')} value={o.speedSmallPerimeter ?? ''} onchange={(e) => setOverride('speedSmallPerimeter', e.currentTarget.value.trim() || undefined)} />
               </label>
               {@render nf('speedFirstLayerTravel', 'First-layer travel', 'mm/s', 10, 500, 10)}
+              {#if o.supports !== 'off'}
+                {@render nf('speedSupport', 'Supports', 'mm/s', 5, 300, 5)}
+                {@render nf('speedSupportInterface', 'Support top', 'mm/s', 5, 300, 5, 'Where the support touches the model')}
+              {/if}
               <label class="field" title="Print overhangs slower, more as they get steeper, so they curl less">
                 <span>Slow on overhangs</span>
                 <select value={o.slowOverhangs === undefined ? '' : o.slowOverhangs ? 'on' : 'off'} onchange={(e) => setOverride('slowOverhangs', e.currentTarget.value === '' ? undefined : e.currentTarget.value === 'on')}>
@@ -370,26 +424,32 @@
                 </select>
               </label>
             </div>
-            <h5 class="mini-head">Acceleration per move <i>mm/s²</i></h5>
+            <h5 class="mini-head">Acceleration <i>mm/s²</i></h5>
             <div class="grid2">
               {@render nf('accelOuterWall', 'Outer wall', 'mm/s²', 50, 50000, 50, 'Lower gives a smoother outside with less ringing')}
               {@render nf('accelInnerWall', 'Inner walls', 'mm/s²', 50, 50000, 50)}
-              {@render nf('accelTop', 'Top surface', 'mm/s²', 50, 50000, 50)}
               {@render nf('accelInfill', 'Infill', 'mm/s²', 50, 50000, 50)}
+              {@render nf('accelTop', 'Top surface', 'mm/s²', 50, 50000, 50)}
               {@render nf('accelBridge', 'Bridges', 'mm/s²', 50, 50000, 50)}
               {@render nf('accelTravel', 'Travel', 'mm/s²', 50, 50000, 50)}
               {@render nf('accelFirstLayer', 'First layer', 'mm/s²', 50, 50000, 50)}
             </div>
-            <h5 class="mini-head">Jerk and smoothing</h5>
+            <h5 class="mini-head">Jerk <i>mm/s</i></h5>
             <div class="grid2">
-              {@render nf('jerk', 'Jerk, all moves', 'mm/s', 0, 50, 1, 'How fast the printer may change direction without slowing (Marlin, RepRapFirmware). Lower is smoother; 0 leaves the printer its own.')}
-              {@render nf('jerkOuterWall', 'Jerk, outer wall', 'mm/s', 0, 50, 1)}
+              {@render nf('jerkOuterWall', 'Outer wall', 'mm/s', 0, 50, 1)}
+              {@render nf('jerkInnerWall', 'Inner walls', 'mm/s', 0, 50, 1)}
+              {@render nf('jerkInfill', 'Infill', 'mm/s', 0, 50, 1)}
+              {@render nf('jerkTop', 'Top surface', 'mm/s', 0, 50, 1)}
+              {@render nf('jerkTravel', 'Travel', 'mm/s', 0, 50, 1, 'Capped at the printer’s own jerk limit')}
+              {@render nf('jerkFirstLayer', 'First layer', 'mm/s', 0, 50, 1)}
+            </div>
+            <h5 class="mini-head">Corner smoothing</h5>
+            <div class="grid2">
               {@render nf('junctionDeviation', 'Junction deviation', 'mm', 0, 0.3, 0.005, 'For printers set to Marlin 2 firmware (older Marlin uses jerk instead). Smaller rounds corners more gently; typical 0.01–0.08. 0 leaves the printer its own.')}
               {@render nf('accelToDecel', 'Accel to decel (Klipper)', '%', 0, 100, 5, 'Klipper max_accel_to_decel as a share of the acceleration: lower means smoother, slower corners. 0 turns it off.')}
             </div>
             <h5 class="mini-head">Flow and cooling</h5>
             <div class="grid2">
-              {@render nf('maxFlow', 'Max flow', 'mm³/s', 1, 100, 0.5, 'The most plastic the hotend can melt. Every speed is capped to stay under it. Stock hotends: about 10–15 for PLA.')}
               {@render nf('pressureAdvance', 'Pressure advance', 'K', 0, 2, 0.005, 'Linear/pressure advance factor for sharper corners. Bowden: about 0.3–1.0; direct drive: 0.02–0.1. 0 turns it off.')}
               <label class="field" title="Slow down small layers so each one has time to cool">
                 <span>Slow for cooling</span>
