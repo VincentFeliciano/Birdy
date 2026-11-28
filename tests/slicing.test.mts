@@ -95,6 +95,7 @@ test('overrides: map to OrcaSlicer keys and value formats', () => {
     wall_loops: '3',
     enable_support: '1',
     support_type: 'tree(auto)',
+    support_style: 'default',
     brim_type: 'outer_only',
     brim_width: '5',
   })
@@ -103,6 +104,60 @@ test('overrides: map to OrcaSlicer keys and value formats', () => {
   assert.deepEqual(f.nozzle_temperature, ['215'])
   assert.deepEqual(f.hot_plate_temp_initial_layer, ['60'])
   assert.deepEqual(overrideKeys('machine', { infill: 50 }), {})
+})
+
+test('overrides: support styles, brim types, skirt, draft shield and raft', () => {
+  assert.deepEqual(overrideKeys('process', { supports: 'organic', supportsPlateOnly: true, supportAngle: 40 }), {
+    enable_support: '1',
+    support_type: 'tree(auto)',
+    support_style: 'organic',
+    support_on_build_plate_only: '1',
+    support_threshold_angle: '40',
+  })
+  assert.equal(overrideKeys('process', { supports: 'snug' }).support_style, 'snug')
+  assert.deepEqual(overrideKeys('process', { brimType: 'ears', brimWidth: 8, brimGap: 0.1 }), { brim_type: 'brim_ears', brim_width: '8', brim_object_gap: '0.1' })
+  assert.equal(overrideKeys('process', { brim: true, brimType: 'none', brimWidth: 8 }).brim_type, 'no_brim', 'the brim type wins over the old switch')
+  assert.equal(overrideKeys('process', { brimType: 'none', brimWidth: 8 }).brim_width, undefined)
+  assert.deepEqual(overrideKeys('process', { skirt: 'skirt', skirtLoops: 3, skirtDistance: 4, skirtHeight: 2 }), { skirt_loops: '3', draft_shield: 'disabled', skirt_distance: '4', skirt_height: '2' })
+  assert.deepEqual(overrideKeys('process', { skirt: 'shield' }), { skirt_loops: '1', draft_shield: 'enabled' })
+  assert.deepEqual(overrideKeys('process', { skirt: 'off', skirtDistance: 4 }), { skirt_loops: '0', draft_shield: 'disabled' })
+  assert.deepEqual(overrideKeys('process', { raftLayers: 3 }), { raft_layers: '3' })
+  assert.deepEqual(overrideKeys('filament', { raftLayers: 3, skirt: 'off' }), {})
+})
+
+test('overrides: fans can be set or switched off entirely', () => {
+  const off = overrideKeys('filament', { coolingOff: true, fanMax: 80, overhangFan: 100, auxFan: 50 })
+  for (const k of ['fan_min_speed', 'fan_max_speed', 'overhang_fan_speed', 'additional_cooling_fan_speed', 'enable_overhang_bridge_fan']) assert.deepEqual(off[k], ['0'], k)
+  assert.deepEqual(
+    overrideKeys('filament', { fanMin: 30, fanMax: 120, overhangFan: 0, fanOffLayers: 2, fanFullLayer: 4, auxFan: 40, exhaustFan: 70 }),
+    {
+      fan_min_speed: ['30'],
+      fan_max_speed: ['100'],
+      enable_overhang_bridge_fan: ['0'],
+      overhang_fan_speed: ['0'],
+      additional_cooling_fan_speed: ['40'],
+      close_fan_the_first_x_layers: ['2'],
+      full_fan_speed_layer: ['4'],
+      activate_air_filtration: ['1'],
+      during_print_exhaust_fan_speed: ['70'],
+    },
+  )
+  assert.deepEqual(overrideKeys('process', { coolingOff: true }), {})
+})
+
+test('overrides: any engine setting from the All settings window, but never ones that run programs or rename presets', () => {
+  const o = { extra: { ironing_type: 'top', seam_position: 'back', post_process: 'calc.exe', inherits: 'x', 'bad key': '1', fan_max_speed: '90' }, fanMax: 60 }
+  const p = overrideKeys('process', o)
+  assert.equal(p.ironing_type, 'top')
+  assert.equal(p.seam_position, 'back')
+  assert.equal(p.post_process, undefined)
+  assert.equal(p.inherits, undefined)
+  assert.equal(p['bad key'], undefined)
+  assert.deepEqual(overrideKeys('filament', o).fan_max_speed, ['60'], 'the quick setting wins')
+  const job = buildJobPreset('process', { name: '0.20mm Standard @BBL X1C' }, o, '2.5.2.0')
+  assert.equal(job.inherits, '0.20mm Standard @BBL X1C')
+  assert.equal(job.name, 'Birdy job process')
+  assert.equal(job.post_process, undefined)
 })
 
 test('job preset: inherits a system preset, or carries an imported one', () => {

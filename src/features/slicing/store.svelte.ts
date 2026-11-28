@@ -65,6 +65,8 @@ export const sl = $state({
   managePrinters: false,
   /** The custom printer editor: open for a new printer, or for editing one by name. */
   editor: null as null | { edit: string | null },
+  /** The window listing every engine setting for the chosen presets. */
+  allSettings: false,
   /** Set while the system is waiting for the user to pick a USB serial port. */
   portChoices: null as SerialPortChoice[] | null,
   preview: {
@@ -238,6 +240,16 @@ export function setPreset(kind: 'process' | 'filament', name: string) {
 export function setOverride<K extends keyof SliceOverrides>(key: K, value: SliceOverrides[K] | undefined) {
   if (value === undefined || (typeof value === 'number' && !Number.isFinite(value))) delete sl.settings.overrides[key]
   else sl.settings.overrides[key] = value
+  persist()
+}
+
+/** Sets (or, with undefined, drops) one engine setting from the "All settings" window. */
+export function setExtra(key: string, value: string | undefined) {
+  const extra = { ...(sl.settings.overrides.extra ?? {}) }
+  if (value === undefined) delete extra[key]
+  else extra[key] = value
+  if (Object.keys(extra).length) sl.settings.overrides.extra = extra
+  else delete sl.settings.overrides.extra
   persist()
 }
 

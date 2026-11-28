@@ -3,7 +3,7 @@
   import Icon from '../../components/Icon.svelte'
   import { fmtBytes } from '../../app/format'
   import { isFdmKind } from '../../types/slicing'
-  import type { PresetRef, SupportMode } from '../../types/slicing'
+  import type { BrimType, PresetRef, SkirtMode, SupportMode } from '../../types/slicing'
   import { fitsMachine } from '../../../electron/slicing/presets'
   import PrinterManager from './PrinterManager.svelte'
   import PricesEditor from '../../components/PricesEditor.svelte'
@@ -76,6 +76,12 @@
   const printer = $derived(fdmPrinters.find((p) => p.id === sl.printerId) ?? fdmPrinters[0])
   const elapsed = $derived(sl.slicing ? Math.max(0, Math.round((now - sl.sliceStarted) / 1000)) : 0)
   const hasOverrides = $derived(Object.keys(o).length > 0)
+  const extraCount = $derived(Object.keys(o.extra ?? {}).length)
+  const brimType = $derived<BrimType | undefined>(o.brimType ?? (o.brim === undefined ? undefined : o.brim ? 'outer' : 'none'))
+  function setBrim(t: BrimType | undefined) {
+    setOverride('brim', undefined)
+    setOverride('brimType', t)
+  }
 
   const num = (e: Event) => {
     const v = (e.currentTarget as HTMLInputElement).value.trim()
@@ -245,9 +251,34 @@
               <select value={o.supports ?? ''} onchange={(e) => setOverride('supports', (e.currentTarget.value || undefined) as SupportMode | undefined)}>
                 <option value="">Preset</option>
                 <option value="off">Off</option>
-                <option value="normal">Normal</option>
-                <option value="tree">Tree</option>
+                <optgroup label="Normal">
+                  <option value="normal">Normal (grid)</option>
+                  <option value="snug">Snug</option>
+                </optgroup>
+                <optgroup label="Tree">
+                  <option value="tree">Tree</option>
+                  <option value="organic">Organic tree</option>
+                  <option value="tree-slim">Tree, slim</option>
+                  <option value="tree-strong">Tree, strong</option>
+                  <option value="tree-hybrid">Tree, hybrid</option>
+                </optgroup>
               </select>
+            </label>
+            <label class="field">
+              <span>Supports from</span>
+              <select disabled={o.supports === 'off'} value={o.supportsPlateOnly === undefined ? '' : o.supportsPlateOnly ? 'plate' : 'all'} onchange={(e) => setOverride('supportsPlateOnly', e.currentTarget.value === '' ? undefined : e.currentTarget.value === 'plate')}>
+                <option value="">Preset</option>
+                <option value="all">Plate and model</option>
+                <option value="plate">Plate only</option>
+              </select>
+            </label>
+            <label class="field" title="Overhangs flatter than this angle, measured from the horizontal, get supports">
+              <span>Support below <i>°</i></span>
+              <input type="number" min="0" max="90" step="5" placeholder="preset" disabled={o.supports === 'off'} value={o.supportAngle ?? ''} onchange={(e) => setOverride('supportAngle', num(e))} />
+            </label>
+            <label class="field" title="Layers of raft printed under the model">
+              <span>Raft <i>layers</i></span>
+              <input type="number" min="0" max="20" step="1" placeholder="preset" value={o.raftLayers ?? ''} onchange={(e) => setOverride('raftLayers', num(e))} />
             </label>
             <label class="field">
               <span>Nozzle <i>°C</i></span>
@@ -259,19 +290,93 @@
               <input type="number" min="0" max={maxBed} step="5" placeholder={machine.heatedBed === false ? 'no heated bed' : 'preset'} disabled={machine.heatedBed === false} value={o.bedTemp ?? ''} onchange={(e) => setOverride('bedTemp', num(e))} />
               {#if (o.bedTemp ?? 0) > maxBed}<em class="warn">Over this bed's {maxBed} °C</em>{/if}
             </label>
+          </div>
+          <h4 class="sub-head">Brim and skirt</h4>
+          <div class="grid2">
             <label class="field">
               <span>Brim</span>
-              <select value={o.brim === undefined ? '' : o.brim ? 'on' : 'off'} onchange={(e) => setOverride('brim', e.currentTarget.value === '' ? undefined : e.currentTarget.value === 'on')}>
+              <select value={brimType ?? ''} onchange={(e) => setBrim((e.currentTarget.value || undefined) as BrimType | undefined)}>
                 <option value="">Preset</option>
-                <option value="on">On</option>
-                <option value="off">Off</option>
+                <option value="none">None</option>
+                <option value="outer">Outside</option>
+                <option value="inner">Inside holes</option>
+                <option value="both">Outside and inside</option>
+                <option value="auto">Auto</option>
+                <option value="ears">Mouse ears (corners)</option>
               </select>
             </label>
             <label class="field">
               <span>Brim width <i>mm</i></span>
-              <input type="number" min="1" max="30" step="1" placeholder="5" disabled={o.brim !== true} value={o.brimWidth ?? ''} onchange={(e) => setOverride('brimWidth', num(e))} />
+              <input type="number" min="1" max="30" step="1" placeholder="preset" disabled={brimType === 'none'} value={o.brimWidth ?? ''} onchange={(e) => setOverride('brimWidth', num(e))} />
+            </label>
+            <label class="field" title="Space between the brim and the model; a small gap makes the brim easier to peel off">
+              <span>Brim gap <i>mm</i></span>
+              <input type="number" min="0" max="2" step="0.05" placeholder="preset" disabled={brimType === 'none'} value={o.brimGap ?? ''} onchange={(e) => setOverride('brimGap', num(e))} />
+            </label>
+            <label class="field" title="A skirt is a loop around the model that primes the nozzle. A draft shield is a skirt as tall as the model that keeps drafts off ABS and ASA.">
+              <span>Skirt</span>
+              <select value={o.skirt ?? ''} onchange={(e) => setOverride('skirt', (e.currentTarget.value || undefined) as SkirtMode | undefined)}>
+                <option value="">Preset</option>
+                <option value="off">None</option>
+                <option value="skirt">Skirt</option>
+                <option value="shield">Draft shield (full height)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Skirt loops</span>
+              <input type="number" min="1" max="20" step="1" placeholder="1" disabled={!o.skirt || o.skirt === 'off'} value={o.skirtLoops ?? ''} onchange={(e) => setOverride('skirtLoops', num(e))} />
+            </label>
+            <label class="field">
+              <span>Skirt distance <i>mm</i></span>
+              <input type="number" min="0" max="60" step="0.5" placeholder="preset" disabled={o.skirt === 'off'} value={o.skirtDistance ?? ''} onchange={(e) => setOverride('skirtDistance', num(e))} />
+            </label>
+            <label class="field">
+              <span>Skirt height <i>layers</i></span>
+              <input type="number" min="1" max="100" step="1" placeholder="preset" disabled={o.skirt === 'off' || o.skirt === 'shield'} value={o.skirtHeight ?? ''} onchange={(e) => setOverride('skirtHeight', num(e))} />
             </label>
           </div>
+          <h4 class="sub-head">Fans</h4>
+          <div class="grid2">
+            <label class="field" title="The part-cooling fan blows on the plastic as it leaves the nozzle. Turn it off for ABS, ASA, PC or nylon.">
+              <span>Part-cooling fan</span>
+              <select value={o.coolingOff ? 'off' : ''} onchange={(e) => setOverride('coolingOff', e.currentTarget.value === 'off' ? true : undefined)}>
+                <option value="">On (preset or below)</option>
+                <option value="off">Off for the whole print</option>
+              </select>
+            </label>
+            <label class="field" title="Side or auxiliary part-cooling fan, on printers that have one">
+              <span>Side / aux fan <i>%</i></span>
+              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.auxFan ?? '')} onchange={(e) => setOverride('auxFan', num(e))} />
+            </label>
+            <label class="field">
+              <span>Fan min <i>%</i></span>
+              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.fanMin ?? '')} onchange={(e) => setOverride('fanMin', num(e))} />
+            </label>
+            <label class="field">
+              <span>Fan max <i>%</i></span>
+              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.fanMax ?? '')} onchange={(e) => setOverride('fanMax', num(e))} />
+            </label>
+            <label class="field" title="Fan speed while printing overhangs and bridges. 0 turns the extra overhang cooling off.">
+              <span>Overhangs, bridges <i>%</i></span>
+              <input type="number" min="0" max="100" step="5" placeholder="preset" disabled={o.coolingOff} value={o.coolingOff ? 0 : (o.overhangFan ?? '')} onchange={(e) => setOverride('overhangFan', num(e))} />
+            </label>
+            <label class="field">
+              <span>Off for first <i>layers</i></span>
+              <input type="number" min="0" max="50" step="1" placeholder="preset" disabled={o.coolingOff} value={o.fanOffLayers ?? ''} onchange={(e) => setOverride('fanOffLayers', num(e))} />
+            </label>
+            <label class="field">
+              <span>Full speed from <i>layer</i></span>
+              <input type="number" min="0" max="100" step="1" placeholder="preset" disabled={o.coolingOff} value={o.fanFullLayer ?? ''} onchange={(e) => setOverride('fanFullLayer', num(e))} />
+            </label>
+            <label class="field" title="Chamber exhaust or air-filter fan during the print, on printers that have one. 0 keeps it off.">
+              <span>Exhaust fan <i>%</i></span>
+              <input type="number" min="0" max="100" step="5" placeholder="preset" value={o.exhaustFan ?? ''} onchange={(e) => setOverride('exhaustFan', num(e))} />
+            </label>
+          </div>
+          <p class="hint">The hotend heatsink fan is not here on purpose: the printer runs it whenever the nozzle is hot, and turning it off would clog the nozzle.</p>
+          <button class="ghost all-btn" onclick={() => (sl.allSettings = true)}>
+            <Icon name="settings" size={13} />All slicer settings{extraCount ? ` · ${extraCount} changed` : ''}
+          </button>
         </section>
       {/if}
 
@@ -602,6 +707,20 @@
   select:disabled,
   input:disabled {
     opacity: 0.5;
+  }
+  .sub-head {
+    margin: 8px 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .all-btn {
+    width: 100%;
+    height: 30px;
+    margin-top: 8px;
+    font-size: 12px;
   }
   .grid2 {
     display: grid;

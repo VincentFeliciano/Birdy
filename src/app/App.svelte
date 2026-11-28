@@ -16,6 +16,7 @@
   import { maybeStartTour, ui } from './commands.svelte'
   import Tour from './Tour.svelte'
   import PrinterEditor from '../features/slicing/PrinterEditor.svelte'
+  import AllSettings from '../features/slicing/AllSettings.svelte'
   import { sl } from '../features/slicing/store.svelte'
   import { installDemo } from './demo.svelte'
   import { applyAccent, theme } from './theme.svelte'
@@ -228,6 +229,9 @@
 {/if}
 {#if sl.editor}
   <PrinterEditor />
+{/if}
+{#if sl.allSettings}
+  <AllSettings />
 {/if}
 {#if ui.settings}
   <SettingsPanel />

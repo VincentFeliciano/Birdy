@@ -1,6 +1,6 @@
 // Pure helpers for the OrcaSlicer engine: catalog parsing, preset matching, job presets and
 // G-code summaries. No Electron or file-system imports, so tests can run them directly.
-import type { PresetCatalog, PresetKind, PresetRef, SliceOverrides, SliceSummary } from '../../src/types/slicing'
+import type { BrimType, PresetCatalog, PresetKind, PresetRef, SliceOverrides, SliceSummary, SupportMode } from '../../src/types/slicing'
 
 const KINDS: readonly PresetKind[] = ['machine', 'process', 'filament']
 
@@ -70,25 +70,90 @@ export function fitsMachine(preset: PresetRef, machine: PresetRef | undefined): 
   return t.length > 0 && (mm.includes(t) || t.includes(mm))
 }
 
+const SUPPORT_STYLES: Record<Exclude<SupportMode, 'off'>, { type: string; style?: string }> = {
+  normal: { type: 'normal(auto)', style: 'default' },
+  snug: { type: 'normal(auto)', style: 'snug' },
+  tree: { type: 'tree(auto)', style: 'default' },
+  'tree-slim': { type: 'tree(auto)', style: 'tree_slim' },
+  'tree-strong': { type: 'tree(auto)', style: 'tree_strong' },
+  'tree-hybrid': { type: 'tree(auto)', style: 'tree_hybrid' },
+  organic: { type: 'tree(auto)', style: 'organic' },
+}
+const BRIM_TYPES: Record<BrimType, string> = { none: 'no_brim', outer: 'outer_only', inner: 'inner_only', both: 'outer_and_inner', auto: 'auto_brim', ears: 'brim_ears' }
+/** Engine setting keys the "All settings" window may set. */
+export const EXTRA_KEY = /^[a-z][a-z0-9_]{0,79}$/
+/** Keys that name or tie presets together, which a job preset sets itself. */
+export const EXTRA_BLOCKED = new Set([
+  'name', 'inherits', 'inherits_group', 'type', 'from', 'instantiation', 'version', 'setting_id', 'base_id', 'filament_id', 'user_id',
+  'print_settings_id', 'printer_settings_id', 'filament_settings_id', 'compatible_printers', 'compatible_printers_condition', 'compatible_prints',
+  'compatible_prints_condition', 'post_process', 'printer_model', 'printer_variant', 'default_print_profile', 'default_filament_profile',
+])
+
 const pct = (n: number) => `${Math.round(n)}%`
 const num = (n: number) => String(Math.round(n * 1000) / 1000)
 
 /** Orca setting keys for each override, as the string values its preset JSON uses. */
 export function overrideKeys(kind: PresetKind, o: SliceOverrides): Record<string, string | string[]> {
   const out: Record<string, string | string[]> = {}
+  // Settings from the "All settings" window go in every job preset (the engine reads each key from
+  // the preset it belongs to); the named settings below then win over them.
+  for (const [k, v] of Object.entries(o.extra ?? {})) if (EXTRA_KEY.test(k) && !EXTRA_BLOCKED.has(k) && typeof v === 'string') out[k] = v
   if (kind === 'process') {
     if (o.layerHeight !== undefined) out.layer_height = num(o.layerHeight)
     if (o.infill !== undefined) out.sparse_infill_density = pct(o.infill)
     if (o.walls !== undefined) out.wall_loops = String(Math.round(o.walls))
     if (o.supports !== undefined) {
       out.enable_support = o.supports === 'off' ? '0' : '1'
-      if (o.supports !== 'off') out.support_type = o.supports === 'tree' ? 'tree(auto)' : 'normal(auto)'
+      if (o.supports !== 'off') {
+        const s = SUPPORT_STYLES[o.supports]
+        out.support_type = s.type
+        if (s.style) out.support_style = s.style
+      }
     }
-    if (o.brim !== undefined) {
-      out.brim_type = o.brim ? 'outer_only' : 'no_brim'
-      if (o.brim && o.brimWidth !== undefined) out.brim_width = num(o.brimWidth)
+    if (o.supportsPlateOnly !== undefined) out.support_on_build_plate_only = o.supportsPlateOnly ? '1' : '0'
+    if (o.supportAngle !== undefined) out.support_threshold_angle = String(Math.round(o.supportAngle))
+    const brim = o.brimType ?? (o.brim === undefined ? undefined : o.brim ? 'outer' : 'none')
+    if (brim !== undefined) {
+      out.brim_type = BRIM_TYPES[brim]
+      if (brim !== 'none' && o.brimWidth !== undefined) out.brim_width = num(o.brimWidth)
     }
+    if (o.brimGap !== undefined) out.brim_object_gap = num(o.brimGap)
+    if (o.skirt !== undefined) {
+      out.skirt_loops = o.skirt === 'off' ? '0' : String(Math.max(1, Math.round(o.skirtLoops ?? 1)))
+      out.draft_shield = o.skirt === 'shield' ? 'enabled' : 'disabled'
+    }
+    if (o.skirt !== 'off') {
+      if (o.skirtDistance !== undefined) out.skirt_distance = num(o.skirtDistance)
+      if (o.skirtHeight !== undefined) out.skirt_height = String(Math.max(1, Math.round(o.skirtHeight)))
+    }
+    if (o.raftLayers !== undefined) out.raft_layers = String(Math.max(0, Math.round(o.raftLayers)))
   } else if (kind === 'filament') {
+    const p = (n: number) => [String(Math.max(0, Math.min(100, Math.round(n))))]
+    if (o.coolingOff) {
+      // Every fan that blows on the part: normal cooling, the overhang/bridge boost and the side fan.
+      out.fan_min_speed = ['0']
+      out.fan_max_speed = ['0']
+      out.enable_overhang_bridge_fan = ['0']
+      out.overhang_fan_speed = ['0']
+      out.internal_bridge_fan_speed = ['-1']
+      out.support_material_interface_fan_speed = ['-1']
+      out.ironing_fan_speed = ['-1']
+      out.additional_cooling_fan_speed = ['0']
+    } else {
+      if (o.fanMin !== undefined) out.fan_min_speed = p(o.fanMin)
+      if (o.fanMax !== undefined) out.fan_max_speed = p(o.fanMax)
+      if (o.overhangFan !== undefined) {
+        out.enable_overhang_bridge_fan = [o.overhangFan > 0 ? '1' : '0']
+        out.overhang_fan_speed = p(o.overhangFan)
+      }
+      if (o.auxFan !== undefined) out.additional_cooling_fan_speed = p(o.auxFan)
+    }
+    if (o.fanOffLayers !== undefined) out.close_fan_the_first_x_layers = [String(Math.max(0, Math.round(o.fanOffLayers)))]
+    if (o.fanFullLayer !== undefined) out.full_fan_speed_layer = [String(Math.max(0, Math.round(o.fanFullLayer)))]
+    if (o.exhaustFan !== undefined) {
+      out.activate_air_filtration = [o.exhaustFan > 0 ? '1' : '0']
+      out.during_print_exhaust_fan_speed = p(o.exhaustFan)
+    }
     if (o.nozzleTemp !== undefined) {
       out.nozzle_temperature = [num(o.nozzleTemp)]
       out.nozzle_temperature_initial_layer = [num(o.nozzleTemp)]
@@ -116,7 +181,8 @@ export function buildJobPreset(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = base.userJson ? { ...base.userJson } : { inherits: base.name }
   for (const k of Object.keys(out)) {
-    if (k.startsWith('birdy_') || ['setting_id', 'base_id', 'user_id', 'updated_time', 'is_custom_defined'].includes(k)) delete out[k]
+    // post_process names programs the engine would run after slicing; Boaty never lets it.
+    if (k.startsWith('birdy_') || ['setting_id', 'base_id', 'user_id', 'updated_time', 'is_custom_defined', 'post_process'].includes(k)) delete out[k]
   }
   if (typeof out.inherits !== 'string') out.inherits = ''
   Object.assign(out, overrideKeys(kind, overrides))

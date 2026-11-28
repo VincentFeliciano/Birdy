@@ -74,18 +74,49 @@ export interface EngineState {
   downloadSize: number
 }
 
-export type SupportMode = 'off' | 'normal' | 'tree'
+export type SupportMode = 'off' | 'normal' | 'snug' | 'tree' | 'tree-slim' | 'tree-strong' | 'tree-hybrid' | 'organic'
+export type BrimType = 'none' | 'outer' | 'inner' | 'both' | 'auto' | 'ears'
+export type SkirtMode = 'off' | 'skirt' | 'shield'
 
-/** The handful of settings people change most, applied on top of the chosen presets. */
+/** The settings people change most, applied on top of the chosen presets. */
 export interface SliceOverrides {
   layerHeight?: number
   infill?: number
   walls?: number
   supports?: SupportMode
+  /** Supports only from the plate, never standing on the model. */
+  supportsPlateOnly?: boolean
+  /** Overhangs flatter than this angle (degrees from the horizontal) get supports. */
+  supportAngle?: number
+  /** Older on/off brim switch; `brimType` wins when both are set. */
   brim?: boolean
+  brimType?: BrimType
   brimWidth?: number
+  brimGap?: number
+  skirt?: SkirtMode
+  skirtLoops?: number
+  skirtDistance?: number
+  /** Skirt height in layers. */
+  skirtHeight?: number
+  raftLayers?: number
   nozzleTemp?: number
   bedTemp?: number
+  /** Turns the part-cooling fan (and the side/aux fan) off for the whole print. */
+  coolingOff?: boolean
+  fanMin?: number
+  fanMax?: number
+  /** Fan stays off for this many first layers. */
+  fanOffLayers?: number
+  /** Fan reaches full speed by this layer. */
+  fanFullLayer?: number
+  /** Fan speed on overhangs and bridges, %. 0 turns the overhang boost off. */
+  overhangFan?: number
+  /** Auxiliary (side) part-cooling fan, %. */
+  auxFan?: number
+  /** Chamber exhaust fan during the print, %. */
+  exhaustFan?: number
+  /** Any other engine setting, by its OrcaSlicer key, as the engine writes it. */
+  extra?: Record<string, string>
 }
 
 export interface SliceSettings {
